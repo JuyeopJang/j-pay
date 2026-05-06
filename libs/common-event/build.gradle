@@ -1,0 +1,11 @@
+dependencies {
+    // common-core의 도메인 타입(Money 등)이 이벤트 페이로드에 포함됨 → api로 노출
+    api project(':libs:common-core')
+
+    // Kafka 클라이언트 — 이 lib을 쓰는 모듈은 모두 Kafka 통신을 함
+    // KafkaTemplate, ConsumerRecord 등이 노출 API에 등장할 가능성 높음 → api
+    api 'org.springframework.kafka:spring-kafka'
+
+    // JSON 직렬화 — 내부 구현용. ObjectMapper는 외부에 직접 노출 안 함 → implementation
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+}

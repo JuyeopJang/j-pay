@@ -1,0 +1,4 @@
+dependencies {
+    // 현재는 root build.gradle의 공통 의존성(lombok, junit) 외에 추가 없음
+    // 도메인 타입 추가하면서 필요해지면 그때 추가
+}

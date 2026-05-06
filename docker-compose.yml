@@ -1,0 +1,81 @@
+# 로컬 개발 인프라 — MySQL / Kafka / Redis
+#
+# 시작:    docker compose up -d
+# 상태:    docker compose ps
+# 로그:    docker compose logs -f kafka
+# 정리:    docker compose down            (컨테이너만)
+# 초기화:  docker compose down -v         (볼륨까지 삭제 — DB 데이터 사라짐)
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: jpay-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: jpay
+      MYSQL_PASSWORD: jpay
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+09:00
+      --innodb-default-row-format=DYNAMIC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    # GraalVM Native Image 변종. ARM64(Apple Silicon)에서 JVM CDS 버그 회피용.
+    # JVM 변종 apache/kafka:3.8.0은 aarch64 + JDK 21.0.4 조합에서 SIGILL 크래시.
+    image: apache/kafka-native:3.8.0
+    container_name: jpay-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft 모드 (Zookeeper 불필요) — 단일 브로커 = 컨트롤러 겸직
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # 단일 브로커 — 모든 replication factor 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # 개발 편의 — 운영에서는 false로 명시적 토픽 관리 권장
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    # Native 이미지는 슬림 베이스라 kafka-topics.sh 같은 admin 스크립트가 없을 수 있음.
+    # 일단 healthcheck 없이 시작하고, 부팅 확인은 docker compose ps의 STATUS=Up + 포트 listening으로.
+
+  redis:
+    image: redis:7-alpine
+    container_name: jpay-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    # AOF 활성화 — 멱등성 키 영속화에 필요. dev 단계에선 RDB만으로도 OK이지만
+    # 캐시가 아니라 멱등성 저장소 용도라 명시적으로 AOF 켬.
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mysql-data:
+  redis-data:

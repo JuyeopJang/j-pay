@@ -1,0 +1,66 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### macOS ###
+.DS_Store
+
+### Logs ###
+*.log
+logs/
+hs_err_pid*
+replay_pid*
+
+### Local secrets / env ###
+.env
+.env.*
+!.env.example
+*-secret.yml
+*-secret.yaml
+*-local.yml
+*-local.yaml
+
+### Docker ###
+# named volumes는 docker가 관리. 로컬 마운트 디렉터리만 무시
+infra/data/
+
+### Personal docs / notes (로컬 전용 — 학습 노트, 설계 spec 등) ###
+/docs/
+
+### Test reports / temp ###
+/coverage/
+*.tmp
