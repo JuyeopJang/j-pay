@@ -20,6 +20,10 @@ spring:
       host: localhost
       port: 6379
 
+app:
+  snowflake:
+    node-id: 1   # 0~1023. 인스턴스마다 다르게 (env var로 주입 권장: APP_SNOWFLAKE_NODE_ID)
+
 server:
   port: 8081
 
