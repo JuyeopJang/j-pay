@@ -1,0 +1,9 @@
+// JPA 인프라 공통 — Snowflake ID 발급, Money AttributeConverter, JPA Auditing 설정
+// 모든 JPA 사용 app(payment-api, ledger-service, transfer-service, batch-app)이 공유
+
+dependencies {
+    api project(':libs:common-core')
+
+    // Spring Data JPA + Hibernate annotations 사용
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+}
