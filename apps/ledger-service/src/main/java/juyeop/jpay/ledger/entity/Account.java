@@ -2,7 +2,7 @@ package juyeop.jpay.ledger.entity;
 
 import jakarta.persistence.*;
 import juyeop.jpay.common.core.Money;
-import juyeop.jpay.ledger.config.SnowflakeId;
+import juyeop.jpay.common.jpa.SnowflakeId;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
