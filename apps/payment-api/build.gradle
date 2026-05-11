@@ -2,6 +2,7 @@ dependencies {
     implementation project(':libs:common-core')
     implementation project(':libs:common-event')
     implementation project(':libs:common-idempotency')
+    implementation project(':libs:common-jpa')
     implementation project(':libs:common-web')
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

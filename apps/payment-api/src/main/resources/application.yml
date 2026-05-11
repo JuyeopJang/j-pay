@@ -20,6 +20,33 @@ spring:
       host: localhost
       port: 6379
 
+app:
+  snowflake:
+    node-id: 2   # ledger-service=1, payment-api=2 (인스턴스마다 unique 보장)
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      pgAuthorize:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 70
+        slow-call-duration-threshold: 5s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  retry:
+    instances:
+      pgAuthorize:
+        max-attempts: 3
+        wait-duration: 100ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - juyeop.jpay.payment.pg.PgException
+
 server:
   port: 8080
 
