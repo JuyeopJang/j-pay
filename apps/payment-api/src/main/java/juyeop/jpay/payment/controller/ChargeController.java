@@ -1,6 +1,7 @@
 package juyeop.jpay.payment.controller;
 
 import jakarta.validation.Valid;
+import juyeop.jpay.common.idempotency.Idempotent;
 import juyeop.jpay.payment.dto.ChargeRequest;
 import juyeop.jpay.payment.dto.ChargeResponse;
 import juyeop.jpay.payment.service.ChargeFacadeService;
@@ -15,6 +16,7 @@ public class ChargeController {
 
     private final ChargeFacadeService chargeFacadeService;
 
+    @Idempotent
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ChargeResponse charge(

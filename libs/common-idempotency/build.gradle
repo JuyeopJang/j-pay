@@ -1,7 +1,7 @@
 dependencies {
     api project(':libs:common-core')
 
-    // Spring Data Redis — RedisTemplate, ReactiveRedisTemplate 등을 lib에서 wrap
-    // 소비자는 IdempotencyStore 같은 우리 인터페이스만 쓰면 됨 → implementation
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
 }
