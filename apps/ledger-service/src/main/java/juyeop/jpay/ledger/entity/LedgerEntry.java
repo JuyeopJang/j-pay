@@ -42,4 +42,8 @@ public class LedgerEntry {
 	@CreatedDate
 	@Column(name = "created_at")
 	private Instant createdAt;
+
+	public static LedgerEntry create(Long transactionId, Long accountId, NormalSide side, Money amount) {
+		return new LedgerEntry(null, transactionId, accountId, side, amount, null);
+	}
 }

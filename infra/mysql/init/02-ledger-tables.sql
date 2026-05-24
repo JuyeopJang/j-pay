@@ -5,24 +5,21 @@
 USE ledger_db;
 
 -- ============================================================================
--- accounts: 회계 계정 (사용자 머니 / 가맹점 미정산금 / PG 미수금 / 운영 자금 / 수수료)
+-- accounts: 회계 계정 — 잔액 없이 LedgerEntry 그룹핑 용도
+-- 사용자 머니(USER_MONEY) / 가맹점 미정산금(MERCHANT_RECEIVABLE) /
+-- 운영 자금(OPERATING_CASH) / 수수료(FEE_REVENUE)
 -- ============================================================================
 CREATE TABLE accounts (
     id              BIGINT        NOT NULL COMMENT 'snowflake id',
-    account_type    VARCHAR(32)   NOT NULL COMMENT 'USER_MONEY / MERCHANT_RECEIVABLE / PG_RECEIVABLE / OPERATING_CASH / FEE_REVENUE',
+    account_type    VARCHAR(32)   NOT NULL COMMENT 'USER_MONEY / MERCHANT_RECEIVABLE / OPERATING_CASH / FEE_REVENUE',
     owner_id        BIGINT        NOT NULL COMMENT 'user_id 또는 merchant_id (시스템 계정은 0)',
-    normal_side     VARCHAR(8)    NOT NULL COMMENT 'DEBIT or CREDIT — account_type에서 derived, DB 검증용',
-    balance         BIGINT        NOT NULL DEFAULT 0,
-    version         BIGINT        NOT NULL DEFAULT 0,
     created_at      TIMESTAMP(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at      TIMESTAMP(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
     UNIQUE KEY uk_account_type_owner (account_type, owner_id),
     INDEX idx_account_owner (owner_id),
-    CONSTRAINT chk_account_balance_nonneg CHECK (balance >= 0),
-    CONSTRAINT chk_account_normal_side    CHECK (normal_side IN ('DEBIT', 'CREDIT')),
-    CONSTRAINT chk_account_type           CHECK (account_type IN (
-        'USER_MONEY', 'MERCHANT_RECEIVABLE', 'PG_RECEIVABLE', 'OPERATING_CASH', 'FEE_REVENUE'
+    CONSTRAINT chk_account_type CHECK (account_type IN (
+        'USER_MONEY', 'MERCHANT_RECEIVABLE', 'OPERATING_CASH', 'FEE_REVENUE'
     ))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

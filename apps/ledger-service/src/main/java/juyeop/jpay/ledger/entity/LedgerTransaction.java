@@ -52,4 +52,12 @@ public class LedgerTransaction {
 
 	@Version
 	private Long version;
+
+	public static LedgerTransaction create(
+			String externalId, TransactionType type, Money totalAmount, Instant occurredAt) {
+		return new LedgerTransaction(
+				null, externalId, type, TransactionStatus.POSTED,
+				totalAmount, occurredAt, null, null, null
+		);
+	}
 }

@@ -1,7 +1,6 @@
 package juyeop.jpay.ledger.entity;
 
 import jakarta.persistence.*;
-import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.jpa.SnowflakeId;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -14,41 +13,36 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 @Table(name = "accounts",
-		uniqueConstraints = @UniqueConstraint(
-				name = "uk_account_type_owner",
-				columnNames = {"account_type", "owner_id"}))
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_account_type_owner",
+                columnNames = {"account_type", "owner_id"}))
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Account {
-	@Id
-	@SnowflakeId
-	private Long id;
 
-	@Enumerated(EnumType.STRING)
-	@Column(name = "account_type", nullable = false)
-	private AccountType accountType;
+    @Id
+    @SnowflakeId
+    private Long id;
 
-	@Column(name = "owner_id", nullable = false)
-	private Long ownerId;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_type", nullable = false)
+    private AccountType accountType;
 
-	@Enumerated(EnumType.STRING)
-	@Column(name = "normal_side", nullable = false)
-	private NormalSide normalSide;
+    @Column(name = "owner_id", nullable = false)
+    private Long ownerId;
 
-	@Column(nullable = false)
-	private Money balance;
+    @CreatedDate
+    @Column(name = "created_at")
+    private Instant createdAt;
 
-	@Version
-	private Long version;
+    @LastModifiedDate
+    @Column(name = "updated_at")
+    private Instant updatedAt;
 
-	@CreatedDate
-	@Column(name = "created_at")
-	private Instant createdAt;
-
-	@LastModifiedDate
-	@Column(name = "updated_at")
-	private Instant updatedAt;
+    public static Account create(AccountType accountType, Long ownerId) {
+        return new Account(null, accountType, ownerId, null, null);
+    }
 }
