@@ -9,7 +9,7 @@ public record ChargeResponse(
 		String chargeId,
 		ChargeStatus status,
 		Long amount,
-		String pgApprovalNumber,
+		String transferRef,
 		String failureReason,
 		Instant requestedAt,
 		Instant completedAt
@@ -19,7 +19,7 @@ public record ChargeResponse(
 				String.valueOf(charge.getId()),
 				charge.getStatus(),
 				charge.getAmount().amount(),
-				charge.getPgApprovalNumber(),
+				charge.getTransferRef(),
 				charge.getFailureReason(),
 				charge.getRequestedAt(),
 				charge.getCompletedAt()

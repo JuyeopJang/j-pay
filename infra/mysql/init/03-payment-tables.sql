@@ -5,21 +5,21 @@
 USE payment_db;
 
 -- ============================================================================
--- charges: 사용자 충전 시도 (카드 → 머니)
--- 한 charge는 PENDING으로 시작해 PG 응답에 따라 COMPLETED 또는 FAILED 종료
+-- charges: 사용자 충전 시도 (은행 계좌 → 머니)
+-- 한 charge는 PENDING으로 시작해 은행 이체 응답에 따라 COMPLETED 또는 FAILED 종료
 -- ============================================================================
 CREATE TABLE charges (
     id                  BIGINT        NOT NULL,
     external_id         VARCHAR(128)  NOT NULL COMMENT '멱등성 키 (Idempotency-Key 헤더)',
     user_id             BIGINT        NOT NULL,
-    payment_method_id   VARCHAR(128)  NOT NULL COMMENT 'PG 측 카드 토큰',
+    bank_account_id     VARCHAR(128)  NOT NULL COMMENT '등록된 은행 계좌 ID (오픈뱅킹 consent token)',
     amount              BIGINT        NOT NULL,
     status              VARCHAR(16)   NOT NULL,
-    pg_approval_number  VARCHAR(64)            COMMENT '성공 시 PG 승인 번호',
-    pg_response_meta    JSON                   COMMENT '응답 메타 (response_code/message/latency 등)',
+    transfer_ref        VARCHAR(64)            COMMENT '성공 시 은행 이체 고유 번호',
+    bank_response_meta  JSON                   COMMENT '응답 메타 (transferRef/errorCode/latency 등)',
     failure_reason      VARCHAR(255)           COMMENT '실패 시 사유',
     requested_at        TIMESTAMP(6)  NOT NULL COMMENT '비즈니스 발생 시각',
-    completed_at        TIMESTAMP(6)           COMMENT 'PG 응답 확정 시각',
+    completed_at        TIMESTAMP(6)           COMMENT '이체 확정 시각',
     created_at          TIMESTAMP(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at          TIMESTAMP(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     version             BIGINT        NOT NULL DEFAULT 0,
@@ -57,6 +57,20 @@ CREATE TABLE payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
+-- outbox_events: Transactional Outbox 패턴용 이벤트 발행 대기 테이블
+-- payment 저장과 동일 트랜잭션에 INSERT → publisher가 polling 후 Kafka 발행
+-- ============================================================================
+CREATE TABLE outbox_events (
+    id          BIGINT        NOT NULL,
+    topic       VARCHAR(100)  NOT NULL COMMENT 'Kafka 토픽명',
+    payload     LONGTEXT      NOT NULL COMMENT 'JSON 직렬화된 이벤트 페이로드',
+    published   TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=미발행, 1=발행완료',
+    created_at  TIMESTAMP(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    INDEX idx_outbox_unpublished (published, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
 -- user_balance: 사용자 선불 머니 잔액
 -- payment_db에 위치. Week 3 Saga 도입 시 ledger-service로 이전 예정.
 -- ============================================================================
@@ -70,4 +84,12 @@ CREATE TABLE user_balance (
     PRIMARY KEY (id),
     UNIQUE KEY uk_user_balance_user_id (user_id),
     CONSTRAINT chk_balance_non_negative CHECK (balance >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE shedlock (
+    name       VARCHAR(64)  NOT NULL,
+    lock_until TIMESTAMP(3) NOT NULL,
+    locked_at  TIMESTAMP(3) NOT NULL,
+    locked_by  VARCHAR(255) NOT NULL,
+    PRIMARY KEY (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

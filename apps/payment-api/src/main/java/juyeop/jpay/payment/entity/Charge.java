@@ -40,8 +40,8 @@ public class Charge {
 	@Column(name = "user_id", nullable = false)
 	private Long userId;
 
-	@Column(name = "payment_method_id", nullable = false)
-	private String paymentMethodId;
+	@Column(name = "bank_account_id", nullable = false)
+	private String bankAccountId;
 
 	@Column(nullable = false)
 	private Money amount;
@@ -50,11 +50,11 @@ public class Charge {
 	@Column(nullable = false)
 	private ChargeStatus status;
 
-	@Column(name = "pg_approval_number")
-	private String pgApprovalNumber;
+	@Column(name = "transfer_ref")
+	private String transferRef;
 
-	@Column(name = "pg_response_meta", columnDefinition = "JSON")
-	private String pgResponseMeta;
+	@Column(name = "bank_response_meta", columnDefinition = "JSON")
+	private String bankResponseMeta;
 
 	@Column(name = "failure_reason")
 	private String failureReason;
@@ -80,41 +80,41 @@ public class Charge {
 			String externalId,
 			Long userId,
 			Money amount,
-			String paymentMethodId
+			String bankAccountId
 	) {
 		Charge charge = new Charge();
 		charge.externalId = externalId;
 		charge.userId = userId;
 		charge.amount = amount;
-		charge.paymentMethodId = paymentMethodId;
+		charge.bankAccountId = bankAccountId;
 		charge.status = ChargeStatus.PENDING;
 		charge.requestedAt = Instant.now();
 		return charge;
 	}
 
-	public void complete(String pgApprovalNumber, String pgResponseMeta) {
+	public void complete(String transferRef, String bankResponseMeta) {
 		if (this.status != ChargeStatus.PENDING) {
 			throw new IllegalStateException("Charge is not in PENDING status");
 		}
 		this.status = ChargeStatus.COMPLETED;
-		this.pgApprovalNumber = pgApprovalNumber;
-		this.pgResponseMeta = pgResponseMeta;
+		this.transferRef = transferRef;
+		this.bankResponseMeta = bankResponseMeta;
 		this.completedAt = Instant.now();
 	}
 
-	public void fail(String failureReason, String pgResponseMeta) {
+	public void fail(String failureReason, String bankResponseMeta) {
 		if (this.status != ChargeStatus.PENDING) {
 			throw new IllegalStateException("Charge is not in PENDING status");
 		}
 		this.status = ChargeStatus.FAILED;
 		this.failureReason = failureReason;
-		this.pgResponseMeta = pgResponseMeta;
+		this.bankResponseMeta = bankResponseMeta;
 		this.completedAt = Instant.now();
 	}
 
-	public boolean matches(Long userId, Money amount, String paymentMethodId) {
+	public boolean matches(Long userId, Money amount, String bankAccountId) {
 		return this.userId.equals(userId)
 				&& this.amount.equals(amount)
-				&& this.paymentMethodId.equals(paymentMethodId);
+				&& this.bankAccountId.equals(bankAccountId);
 	}
 }

@@ -10,6 +10,6 @@ public record ChargeRequest(
 
 		@NotBlank
 		@Size(min = 16, max = 128)
-		String paymentMethodId
+		String bankAccountId
 ) {
 }

@@ -3,9 +3,16 @@ spring:
     name: payment-api
 
   datasource:
-    url: jdbc:mysql://localhost:3306/payment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    driver-class-name: com.p6spy.engine.spy.P6SpyDriver
+    url: jdbc:p6spy:mysql://localhost:3306/payment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=5000
     username: jpay
     password: jpay
+    hikari:
+      maximum-pool-size: 25
+      minimum-idle: 5
+      connection-timeout: 3000     # 풀에서 커넥션을 기다리는 최대 시간(ms)
+      idle-timeout: 600000         # 유휴 커넥션 유지 시간(ms) — 10분
+      max-lifetime: 1800000        # 커넥션 최대 수명(ms) — 30분
   jpa:
     hibernate:
       ddl-auto: validate
@@ -14,11 +21,19 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Outbox payload는 이미 JSON 문자열로 직렬화된 상태 → StringSerializer로 그대로 전송
 
   data:
     redis:
       host: localhost
       port: 6379
+      # Redisson이 커넥션 풀을 직접 관리 → Lettuce pool 설정 불필요
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
 app:
   snowflake:
@@ -27,7 +42,7 @@ app:
 resilience4j:
   circuitbreaker:
     instances:
-      pgAuthorize:
+      bankTransfer:
         sliding-window-type: COUNT_BASED
         sliding-window-size: 10
         minimum-number-of-calls: 5
@@ -39,16 +54,22 @@ resilience4j:
         register-health-indicator: true
   retry:
     instances:
-      pgAuthorize:
+      bankTransfer:
         max-attempts: 3
         wait-duration: 100ms
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         retry-exceptions:
-          - juyeop.jpay.payment.pg.PgException
+          - juyeop.jpay.payment.bank.BankTransferException
 
 server:
   port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 50
 
 management:
   endpoints:
@@ -58,3 +79,11 @@ management:
   endpoint:
     health:
       show-details: always
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

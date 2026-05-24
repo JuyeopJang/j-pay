@@ -1,4 +1,4 @@
-package juyeop.jpay.payment.pg.config;
+package juyeop.jpay.payment.bank.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -7,15 +7,11 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 
-/**
- * PG 호출 전용 RestClient. baseUrl + connect/read timeout 명시.
- * 같은 프로세스 내 mock 컨트롤러를 호출 (Week 2 한정).
- */
 @Configuration
-public class PgRestClientConfig {
+public class BankTransferRestClientConfig {
 
     @Bean
-    public RestClient pgRestClient() {
+    public RestClient bankTransferRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(2));
         factory.setReadTimeout(Duration.ofSeconds(5));
