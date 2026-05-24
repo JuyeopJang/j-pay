@@ -1,6 +1,7 @@
 package juyeop.jpay.payment.controller;
 
 import juyeop.jpay.common.core.Money;
+import juyeop.jpay.payment.AbstractPaymentIntegrationTest;
 import juyeop.jpay.payment.dto.PaymentRequest;
 import juyeop.jpay.payment.dto.PaymentResponse;
 import juyeop.jpay.payment.entity.PaymentStatus;
@@ -14,13 +15,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.*;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.UUID;
 
@@ -35,27 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "app.snowflake.node-id=99"
         }
 )
-@Testcontainers
-class PaymentControllerIntegrationTest {
+class PaymentControllerIntegrationTest extends AbstractPaymentIntegrationTest {
 
-    @Container
-    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("payment_db")
-            .withUsername("jpay")
-            .withPassword("jpay");
-
-    @Container
-    static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7"))
-            .withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void containerProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-    }
+    @MockitoBean
+    KafkaTemplate<String, String> kafkaTemplate;
 
     @Autowired
     TestRestTemplate restTemplate;
@@ -110,7 +89,6 @@ class PaymentControllerIntegrationTest {
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(second.getBody().paymentId()).isEqualTo(first.getBody().paymentId());
         assertThat(second.getBody().status()).isEqualTo(PaymentStatus.COMPLETED);
-        // 잔액은 한 번만 차감되어야 한다
         assertThat(userBalanceRepository.findByUserId(USER_ID))
                 .isPresent()
                 .hasValueSatisfying(b ->

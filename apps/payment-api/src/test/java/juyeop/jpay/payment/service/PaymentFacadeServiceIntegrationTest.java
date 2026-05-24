@@ -2,6 +2,7 @@ package juyeop.jpay.payment.service;
 
 import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.web.error.BusinessException;
+import juyeop.jpay.payment.AbstractPaymentIntegrationTest;
 import juyeop.jpay.payment.dto.PaymentRequest;
 import juyeop.jpay.payment.dto.PaymentResponse;
 import juyeop.jpay.payment.entity.PaymentStatus;
@@ -13,13 +14,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -39,27 +35,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 				"app.snowflake.node-id=99"
 		}
 )
-@Testcontainers
-class PaymentFacadeServiceIntegrationTest {
+class PaymentFacadeServiceIntegrationTest extends AbstractPaymentIntegrationTest {
 
-	@Container
-	static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
-			.withDatabaseName("payment_db")
-			.withUsername("jpay")
-			.withPassword("jpay");
-
-	@Container
-	static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7"))
-			.withExposedPorts(6379);
-
-	@DynamicPropertySource
-	static void containerProperties(DynamicPropertyRegistry registry) {
-		registry.add("spring.datasource.url", mysql::getJdbcUrl);
-		registry.add("spring.datasource.username", mysql::getUsername);
-		registry.add("spring.datasource.password", mysql::getPassword);
-		registry.add("spring.data.redis.host", redis::getHost);
-		registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-	}
+	@MockitoBean
+	KafkaTemplate<String, String> kafkaTemplate;
 
 	@Autowired
 	PaymentFacadeService paymentFacadeService;
@@ -88,13 +67,10 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void pay_sufficientBalance_returnsCompleted() {
-		// given
 		String externalId = UUID.randomUUID().toString();
 
-		// when
 		PaymentResponse response = paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID));
 
-		// then
 		assertThat(response.status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(response.completedAt()).isNotNull();
 		assertThat(paymentRepository.findByExternalId(externalId))
@@ -106,37 +82,28 @@ class PaymentFacadeServiceIntegrationTest {
 	}
 
 	@Test
-	void pay_insufficientBalance_returnsFailed() {
-		// given
+	void pay_insufficientBalance_throwsBusinessException() {
 		String externalId = UUID.randomUUID().toString();
 
-		// when
-		PaymentResponse response = paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(OVER_LIMIT_AMOUNT, MERCHANT_ID));
-
-		// then
-		assertThat(response.status()).isEqualTo(PaymentStatus.FAILED);
-		assertThat(response.failureReason()).isNotNull();
-		assertThat(paymentRepository.findByExternalId(externalId))
-				.isPresent()
-				.hasValueSatisfying(payment -> assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED));
+		assertThatThrownBy(() -> paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(OVER_LIMIT_AMOUNT, MERCHANT_ID)))
+				.isExactlyInstanceOf(BusinessException.class)
+				.satisfies(e -> assertThat(((BusinessException) e).getErrorType())
+						.isEqualTo(PaymentErrorType.INSUFFICIENT_BALANCE));
+		assertThat(paymentRepository.findByExternalId(externalId)).isEmpty();
 		assertThat(userBalanceRepository.findByUserId(USER_ID))
 				.isPresent()
 				.hasValueSatisfying(balance -> assertThat(balance.getBalance()).isEqualTo(Money.of(INITIAL_BALANCE)));
 	}
 
 	@Test
-	void pay_balanceNotFound_returnsFailed() {
-		// given
+	void pay_balanceNotFound_throwsBusinessException() {
 		String externalId = UUID.randomUUID().toString();
 
-		// when
-		PaymentResponse response = paymentFacadeService.payOptimistic(externalId, UNKNOWN_USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID));
-
-		// then
-		assertThat(response.status()).isEqualTo(PaymentStatus.FAILED);
-		assertThat(paymentRepository.findByExternalId(externalId))
-				.isPresent()
-				.hasValueSatisfying(payment -> assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED));
+		assertThatThrownBy(() -> paymentFacadeService.payOptimistic(externalId, UNKNOWN_USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID)))
+				.isExactlyInstanceOf(BusinessException.class)
+				.satisfies(e -> assertThat(((BusinessException) e).getErrorType())
+						.isEqualTo(PaymentErrorType.BALANCE_NOT_FOUND));
+		assertThat(paymentRepository.findByExternalId(externalId)).isEmpty();
 	}
 
 	// =========================================================================
@@ -145,14 +112,11 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void pay_sameKeyTwice_replaysPreviousResult() {
-		// given
 		String externalId = UUID.randomUUID().toString();
 
-		// when
 		PaymentResponse response1 = paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID));
 		PaymentResponse response2 = paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID));
 
-		// then
 		assertThat(response1.status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(response2.status()).isEqualTo(PaymentStatus.COMPLETED);
 		assertThat(response1.paymentId()).isEqualTo(response2.paymentId());
@@ -169,11 +133,9 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void pay_sameKeyDifferentUserId_throwsIdempotencyConflict() {
-		// given
 		String externalId = UUID.randomUUID().toString();
 		paymentFacadeService.payOptimistic(externalId, USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID));
 
-		// when & then
 		assertThatThrownBy(() -> paymentFacadeService.payOptimistic(externalId, UNKNOWN_USER_ID, new PaymentRequest(AMOUNT, MERCHANT_ID)))
 				.isExactlyInstanceOf(BusinessException.class)
 				.satisfies(e -> assertThat(((BusinessException) e).getErrorType())
@@ -182,13 +144,11 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void pay_concurrentDuplicateInsert_bothThreadsGetSamePaymentId() throws InterruptedException {
-		// given
 		PaymentResponse[] responses = new PaymentResponse[2];
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		String externalId = UUID.randomUUID().toString();
 
-		// when
 		for (int i = 0; i < 2; i++) {
 			int finalI = i;
 			pool.submit(() -> {
@@ -201,7 +161,6 @@ class PaymentFacadeServiceIntegrationTest {
 		pool.shutdown();
 		pool.awaitTermination(10, SECONDS);
 
-		// then
 		assertThat(responses[0].paymentId()).isEqualTo(responses[1].paymentId());
 		assertThat(paymentRepository.findAll())
 				.filteredOn(p -> p.getExternalId().equals(externalId))
@@ -217,11 +176,9 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void payOptimistic_concurrentDeduction_balanceIsConsistent() throws InterruptedException {
-		// given
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService pool = Executors.newFixedThreadPool(100);
 
-		// when
 		for (int i = 0; i < 100; i++) {
 			final int idx = i;
 			pool.submit(() -> {
@@ -234,7 +191,6 @@ class PaymentFacadeServiceIntegrationTest {
 		pool.shutdown();
 		boolean terminated = pool.awaitTermination(10, SECONDS);
 
-		// then
 		assertThat(terminated).as("threads did not finish in time").isTrue();
 		long completed = paymentRepository.findAll().stream()
 				.filter(p -> p.getStatus() == PaymentStatus.COMPLETED)
@@ -249,11 +205,9 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void payPessimistic_concurrentDeduction_balanceIsConsistent() throws InterruptedException {
-		// given
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService pool = Executors.newFixedThreadPool(100);
 
-		// when
 		for (int i = 0; i < 100; i++) {
 			final int idx = i;
 			pool.submit(() -> {
@@ -266,7 +220,6 @@ class PaymentFacadeServiceIntegrationTest {
 		pool.shutdown();
 		boolean terminated = pool.awaitTermination(10, SECONDS);
 
-		// then
 		assertThat(terminated).as("threads did not finish in time").isTrue();
 		long completed = paymentRepository.findAll().stream()
 				.filter(p -> p.getStatus() == PaymentStatus.COMPLETED)
@@ -282,11 +235,9 @@ class PaymentFacadeServiceIntegrationTest {
 
 	@Test
 	void payWithRedisLock_concurrentDeduction_balanceIsConsistent() throws InterruptedException {
-		// given
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService pool = Executors.newFixedThreadPool(100);
 
-		// when
 		for (int i = 0; i < 100; i++) {
 			final int idx = i;
 			pool.submit(() -> {
@@ -299,7 +250,6 @@ class PaymentFacadeServiceIntegrationTest {
 		pool.shutdown();
 		boolean terminated = pool.awaitTermination(10, SECONDS);
 
-		// then
 		assertThat(terminated).as("threads did not finish in time").isTrue();
 		long completed = paymentRepository.findAll().stream()
 				.filter(p -> p.getStatus() == PaymentStatus.COMPLETED)

@@ -1,57 +1,76 @@
 package juyeop.jpay.payment.service;
 
 import juyeop.jpay.common.core.InsufficientFundsException;
-import juyeop.jpay.payment.exception.BalanceNotFoundException;
 import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.web.error.BusinessException;
 import juyeop.jpay.payment.dto.PaymentRequest;
 import juyeop.jpay.payment.dto.PaymentResponse;
 import juyeop.jpay.payment.entity.Payment;
+import juyeop.jpay.payment.exception.BalanceNotFoundException;
 import juyeop.jpay.payment.exception.PaymentErrorType;
+import juyeop.jpay.payment.repository.DistributedLockRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Recover;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
-import java.util.function.BiConsumer;
+import java.time.Duration;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
 public class PaymentFacadeService {
 
-	private final PaymentService paymentService;
-	private final UserBalanceService userBalanceService;
+	private static final Duration LOCK_WAIT_TIMEOUT = Duration.ofSeconds(10);
+	private static final Duration LOCK_TTL = Duration.ofSeconds(5);
 
+	private final PaymentService paymentService;
+	private final DistributedLockRepository distributedLockRepository;
+
+	@Retryable(
+			retryFor = ObjectOptimisticLockingFailureException.class,
+			maxAttempts = 5,
+			backoff = @Backoff(delay = 50, maxDelay = 500, multiplier = 1.5, random = true)
+	)
 	public PaymentResponse payOptimistic(String idempotencyKey, Long userId, PaymentRequest request) {
 		return paymentService.findByExternalId(idempotencyKey)
 				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(
-						idempotencyKey,
-						userId,
-						request,
-						userBalanceService::deductOptimistic
-				));
+				.orElseGet(() -> process(idempotencyKey, userId, request,
+						() -> paymentService.deductAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
+	}
+
+	// Spring Retry는 non-retryable 예외도 recover로 라우팅한다. BusinessException은 그대로 재전파.
+	@Recover
+	public PaymentResponse recoverOptimistic(Exception e, String idempotencyKey, Long userId, PaymentRequest request) {
+		if (e instanceof BusinessException be) throw be;
+		throw new BusinessException(PaymentErrorType.OPTIMISTIC_LOCK_FAILURE);
 	}
 
 	public PaymentResponse payPessimistic(String idempotencyKey, Long userId, PaymentRequest request) {
 		return paymentService.findByExternalId(idempotencyKey)
 				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(
-						idempotencyKey,
-						userId,
-						request,
-						userBalanceService::deductPessimistic
-				));
+				.orElseGet(() -> process(idempotencyKey, userId, request,
+						() -> paymentService.deductPessimisticAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
 	}
 
 	public PaymentResponse payWithRedisLock(String idempotencyKey, Long userId, PaymentRequest request) {
 		return paymentService.findByExternalId(idempotencyKey)
 				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(
-						idempotencyKey,
-						userId,
-						request,
-						userBalanceService::deductWithRedisLock
-				));
+				.orElseGet(() -> {
+					String lockKey = "lock:user:%s:balance".formatted(userId);
+					if (!distributedLockRepository.tryAcquire(lockKey, LOCK_WAIT_TIMEOUT, LOCK_TTL)) {
+						throw new BusinessException(PaymentErrorType.DISTRIBUTED_LOCK_ACQUISITION_FAILED);
+					}
+					try {
+						return process(idempotencyKey, userId, request,
+								() -> paymentService.deductAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId()));
+					} finally {
+						distributedLockRepository.release(lockKey);
+					}
+				});
 	}
 
 	private PaymentResponse replay(Payment payment, Long userId, PaymentRequest request) {
@@ -60,28 +79,17 @@ public class PaymentFacadeService {
 		return PaymentResponse.from(payment);
 	}
 
-	private PaymentResponse process(
-			String idempotencyKey,
-			Long userId,
-			PaymentRequest request,
-			BiConsumer<Long, Money> deductStrategy
-	) {
-		Payment payment;
-		Money amount = Money.of(request.amount());
+	private PaymentResponse process(String idempotencyKey, Long userId, PaymentRequest request, Supplier<Payment> supplier) {
 		try {
-			payment = paymentService.createPending(idempotencyKey, userId, amount, request.merchantId());
+			return PaymentResponse.from(supplier.get());
 		} catch (DataIntegrityViolationException e) {
 			Payment existing = paymentService.findByExternalId(idempotencyKey)
 					.orElseThrow(() -> new IllegalStateException("UNIQUE conflict but row not found"));
 			return replay(existing, userId, request);
-		}
-
-		try {
-			deductStrategy.accept(userId, amount);
-			return PaymentResponse.from(paymentService.completePayment(payment.getId()));
-		} catch (InsufficientFundsException | BalanceNotFoundException e) {
-			payment = paymentService.failPayment(payment.getId(), e.getMessage());
-			return PaymentResponse.from(payment);
+		} catch (InsufficientFundsException e) {
+			throw new BusinessException(PaymentErrorType.INSUFFICIENT_BALANCE);
+		} catch (BalanceNotFoundException e) {
+			throw new BusinessException(PaymentErrorType.BALANCE_NOT_FOUND);
 		}
 	}
 }

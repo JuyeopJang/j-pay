@@ -60,4 +60,8 @@ public class UserBalance {
 	public void deduct(Money amount) {
 		balance = balance.minus(amount);
 	}
+
+	public void deposit(Money amount) {
+		balance = balance.plus(amount);
+	}
 }

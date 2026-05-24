@@ -25,4 +25,11 @@ public class UserBalanceTxService {
 			throw new BalanceNotFoundException(userId);
 		});
 	}
+
+	@Transactional
+	public void deposit(Long userId, Money amount) {
+		userBalanceRepository.findByUserId(userId).ifPresentOrElse((balance) -> balance.deposit(amount), () -> {
+			throw new BalanceNotFoundException(userId);
+		});
+	}
 }

@@ -80,6 +80,18 @@ public class Payment {
 		return payment;
 	}
 
+	public static Payment completed(String externalId, Long userId, Money amount, String merchantId) {
+		Payment payment = new Payment();
+		payment.externalId = externalId;
+		payment.userId = userId;
+		payment.amount = amount;
+		payment.merchantId = merchantId;
+		payment.status = PaymentStatus.COMPLETED;
+		payment.requestedAt = Instant.now();
+		payment.completedAt = Instant.now();
+		return payment;
+	}
+
 	public void complete() {
 		if (this.status != PaymentStatus.PENDING) {
 			throw new IllegalStateException("Payment is not in PENDING status");
