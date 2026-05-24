@@ -3,9 +3,15 @@ spring:
     name: transfer-service
 
   datasource:
-    url: jdbc:mysql://localhost:3306/transfer_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://localhost:3306/transfer_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=5000
     username: jpay
     password: jpay
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 3000
+      idle-timeout: 600000
+      max-lifetime: 1800000
   jpa:
     hibernate:
       ddl-auto: validate
@@ -14,14 +20,43 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      group-id: transfer-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-  data:
-    redis:
-      host: localhost
-      port: 6379
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
 server:
   port: 8082
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 50
+
+app:
+  snowflake:
+    node-id: 3  # payment-api=2, ledger-service=1, transfer-service=3
+  external-bank:
+    base-url: http://localhost:8082  # 자기 자신의 mock 엔드포인트
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      externalBank:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50         # 10회 중 5회 실패 시 OPEN
+        wait-duration-in-open-state: 10s   # 10초 후 HALF_OPEN 시도
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
 
 management:
   endpoints:
@@ -31,3 +66,14 @@ management:
   endpoint:
     health:
       show-details: always
+      probes:
+        enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
