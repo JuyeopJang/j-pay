@@ -13,7 +13,7 @@ public final class SnowflakeIds {
 
     public static synchronized void init(long nodeId) {
         if (instance != null) {
-            throw new IllegalStateException("SnowflakeIds already initialized");
+            return;
         }
         instance = new SnowflakeIdGenerator(nodeId);
     }

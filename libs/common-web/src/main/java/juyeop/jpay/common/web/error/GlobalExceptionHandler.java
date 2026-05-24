@@ -14,15 +14,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 모든 예외를 RFC 7807 ProblemDetail로 변환하는 공통 핸들러.
- * common-web에 의존하는 모든 app(payment-api, ledger-service 등)에 자동 적용.
- */
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
-    /** 도메인 의미 있는 예외 — ErrorType 그대로 매핑. */
     @ExceptionHandler(BusinessException.class)
     public ProblemDetail handleBusiness(BusinessException ex, HttpServletRequest request) {
         ErrorType type = ex.getErrorType();
@@ -34,7 +29,6 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
-    /** @Valid 검증 실패 — 다중 필드 에러를 errors 배열에 담음. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
@@ -53,7 +47,6 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
-    /** 필수 헤더 누락 (예: Idempotency-Key). */
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ProblemDetail handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest request) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(
@@ -66,7 +59,6 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
-    /** 명시적으로 처리되지 않은 예외 — 500 + 로그. */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneric(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception at {} {}", request.getMethod(), request.getRequestURI(), ex);

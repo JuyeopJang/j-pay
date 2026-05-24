@@ -2,9 +2,6 @@ package juyeop.jpay.common.web.error;
 
 import org.springframework.http.HttpStatus;
 
-/**
- * 도메인 무관 공통 ErrorType. 각 app은 자기 도메인 ErrorType을 별도로 정의.
- */
 public enum CommonErrorType implements ErrorType {
 
     INVALID_REQUEST("invalid-request",   "Invalid Request",   HttpStatus.BAD_REQUEST),

@@ -64,3 +64,6 @@ infra/data/
 ### Test reports / temp ###
 /coverage/
 *.tmp
+
+### Claude Code ###
+.claude/
