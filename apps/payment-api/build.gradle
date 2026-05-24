@@ -1,3 +1,13 @@
+tasks.named('bootRun') {
+    jvmArgs = [
+        '-XX:+UseContainerSupport',
+        '-XX:MaxRAMPercentage=75.0',
+        '-Xms256m',
+        '-Xmx1g',
+        '-Xlog:gc*:stdout:time,level,tags',
+    ]
+}
+
 dependencies {
     implementation project(':libs:common-core')
     implementation project(':libs:common-event')
@@ -9,9 +19,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.redisson:redisson-spring-boot-starter:3.27.2'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'io.micrometer:micrometer-tracing-bridge-brave'
+    implementation 'io.zipkin.reporter2:zipkin-reporter-brave'
     implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+    implementation 'net.javacrumbs.shedlock:shedlock-spring:5.14.0'
+    implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.14.0'
 
     runtimeOnly 'com.mysql:mysql-connector-j'
+    implementation 'p6spy:p6spy:3.9.1'
 
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:junit-jupiter'
