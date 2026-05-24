@@ -3,9 +3,16 @@ spring:
     name: batch-app
 
   datasource:
-    url: jdbc:mysql://localhost:3306/batch_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    # jdbc-url 사용 — PaymentDataSourceConfig에서 @Primary DataSource를 명시 등록할 때 HikariCP 직접 바인딩이 필요
+    jdbc-url: jdbc:mysql://localhost:3306/batch_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=60000
     username: jpay
     password: jpay
+    # @ConfigurationProperties("spring.datasource")로 HikariDataSource에 직접 바인딩되므로 hikari 중간 키 없음
+    maximum-pool-size: 5
+    minimum-idle: 2
+    connection-timeout: 3000
+    idle-timeout: 600000
+    max-lifetime: 1800000
   jpa:
     hibernate:
       ddl-auto: validate
@@ -21,11 +28,46 @@ spring:
     jdbc:
       initialize-schema: always
 
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
 server:
   port: 8083
+  shutdown: graceful
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+payment-db:
+  datasource:
+    # HikariCP는 url이 아니라 jdbc-url로 바인딩됨. driver-class-name 없이도 자동 감지.
+    jdbc-url: jdbc:mysql://localhost:3306/payment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=60000
+    username: jpay
+    password: jpay
+    maximum-pool-size: 3
+    minimum-idle: 1
+    connection-timeout: 3000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+
+app:
+  payment-api:
+    base-url: http://localhost:8080
+  transfer-service:
+    base-url: http://localhost:8082
+  settlement:
+    default-bank-account-id: DEMO-MERCHANT-ACCOUNT-001
