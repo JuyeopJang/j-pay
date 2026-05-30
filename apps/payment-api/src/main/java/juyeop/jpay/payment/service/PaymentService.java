@@ -48,6 +48,15 @@ public class PaymentService {
 	}
 
 	@Transactional
+	public Payment deductAtomicAndComplete(String externalId, Long userId, Money amount, String merchantId) {
+		userBalanceTxService.deductAtomic(userId, amount);
+		Payment payment = Payment.completed(externalId, userId, amount, merchantId);
+		paymentRepository.save(payment);
+		outboxEventRepository.save(buildOutboxEvent(payment));
+		return payment;
+	}
+
+	@Transactional
 	public Payment failPayment(Long paymentId, String reason) {
 		Payment payment = paymentRepository.findById(paymentId)
 				.orElseThrow(() -> new IllegalStateException("Payment not found: " + paymentId));

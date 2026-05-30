@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import juyeop.jpay.payment.entity.UserBalance;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,4 +17,8 @@ public interface UserBalanceRepository extends JpaRepository<UserBalance, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM UserBalance b WHERE b.userId = :userId")
     Optional<UserBalance> findByUserIdForUpdate(@Param("userId") Long userId);
+
+    @Modifying
+    @Query(value = "UPDATE user_balance SET balance = balance - :amount WHERE user_id = :userId AND balance >= :amount", nativeQuery = true)
+    int deductIfSufficient(@Param("userId") Long userId, @Param("amount") long amount);
 }

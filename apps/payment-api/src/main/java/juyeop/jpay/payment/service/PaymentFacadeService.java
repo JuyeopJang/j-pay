@@ -56,6 +56,13 @@ public class PaymentFacadeService {
 						() -> paymentService.deductPessimisticAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
 	}
 
+	public PaymentResponse payAtomic(String idempotencyKey, Long userId, PaymentRequest request) {
+		return paymentService.findByExternalId(idempotencyKey)
+				.map(existing -> replay(existing, userId, request))
+				.orElseGet(() -> process(idempotencyKey, userId, request,
+						() -> paymentService.deductAtomicAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
+	}
+
 	public PaymentResponse payWithRedisLock(String idempotencyKey, Long userId, PaymentRequest request) {
 		return paymentService.findByExternalId(idempotencyKey)
 				.map(existing -> replay(existing, userId, request))

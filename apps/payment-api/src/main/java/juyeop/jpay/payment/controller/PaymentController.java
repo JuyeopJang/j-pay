@@ -26,6 +26,7 @@ public class PaymentController {
         return paymentFacadeService.payOptimistic(idempotencyKey, userId, request);
     }
 
+    @Idempotent
     @PostMapping("/pessimistic")
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse payPessimistic(
@@ -35,6 +36,17 @@ public class PaymentController {
         return paymentFacadeService.payPessimistic(idempotencyKey, userId, request);
     }
 
+    @Idempotent
+    @PostMapping("/atomic")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PaymentResponse payAtomic(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestHeader("X-User-Id") Long userId,
+            @Valid @RequestBody PaymentRequest request) {
+        return paymentFacadeService.payAtomic(idempotencyKey, userId, request);
+    }
+
+    @Idempotent
     @PostMapping("/redis-lock")
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse payWithRedisLock(
