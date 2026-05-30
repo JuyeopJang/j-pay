@@ -1,0 +1,203 @@
+{
+  "title": "j-pay 부하 테스트",
+  "uid": "jpay-load-test",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    { "id": 100, "title": "── k6 메트릭 ──", "type": "text", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 1,
+      "title": "k6 TPS (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } }
+      },
+      "targets": [
+        { "expr": "rate(k6_http_reqs_total[30s])", "legendFormat": "TPS" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "k6 응답 지연 (p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "lineWidth": 2 } }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(k6_http_req_duration_bucket[30s])) * 1000", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, rate(k6_http_req_duration_bucket[30s])) * 1000", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "k6 VU 수",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 9, "w": 6, "h": 6 },
+      "targets": [
+        { "expr": "k6_vus", "legendFormat": "VUs" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "k6 에러율",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 9, "w": 6, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 }
+      },
+      "targets": [
+        { "expr": "rate(k6_http_req_failed_total[30s]) / rate(k6_http_reqs_total[30s])", "legendFormat": "error rate" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "k6 멱등성 replay 건수",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "rate(k6_idempotency_replay_count_total[30s])", "legendFormat": "replay/s" }
+      ]
+    },
+
+    { "id": 101, "title": "── HTTP + Circuit Breaker ──", "type": "text", "gridPos": { "x": 0, "y": 15, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 6,
+      "title": "HTTP 요청률 (서비스·엔드포인트별)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=~\"payment-api|transfer-service\"}[30s])", "legendFormat": "{{job}} {{uri}} {{status}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "HTTP p95 / p99 지연 (서비스별)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by(job, uri, le) (rate(http_server_requests_seconds_bucket{job=~\"payment-api|transfer-service\"}[30s])))", "legendFormat": "{{job}} {{uri}} p95" },
+        { "expr": "histogram_quantile(0.99, sum by(job, uri, le) (rate(http_server_requests_seconds_bucket{job=~\"payment-api|transfer-service\"}[30s])))", "legendFormat": "{{job}} {{uri}} p99" }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "HTTP 에러 건수 (4xx / 5xx)",
+      "type": "timeseries",
+      "description": "CB OPEN 시점과 5xx 급증 시점 비교, 잔액 부족 4xx와 서버 오류 5xx 분리",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=~\"payment-api|transfer-service\", status=~\"4..\"}[30s])", "legendFormat": "{{job}} 4xx {{uri}}" },
+        { "expr": "rate(http_server_requests_seconds_count{job=~\"payment-api|transfer-service\", status=~\"5..\"}[30s])", "legendFormat": "{{job}} 5xx {{uri}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Circuit Breaker 상태 (서비스별)",
+      "type": "timeseries",
+      "description": "0=CLOSED, 1=OPEN, 2=HALF_OPEN — payment-api: bankTransfer / transfer-service: externalBank",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "resilience4j_circuitbreaker_state", "legendFormat": "{{job}} {{name}} ({{state}})" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Circuit Breaker 실패율 (서비스별)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        { "expr": "resilience4j_circuitbreaker_failure_rate", "legendFormat": "{{job}} {{name}}" }
+      ]
+    },
+
+    { "id": 102, "title": "── JVM 리소스 ──", "type": "text", "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 10,
+      "title": "JVM Heap 사용량 (서비스별)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "sum by(job) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{job}} used" },
+        { "expr": "sum by(job) (jvm_memory_max_bytes{area=\"heap\"})", "legendFormat": "{{job}} max" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "GC Pause 시간 (서비스별)",
+      "type": "timeseries",
+      "description": "p99 지연 급등 시 GC가 원인인지 확인",
+      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "rate(jvm_gc_pause_seconds_sum[30s])", "legendFormat": "{{job}} {{cause}}" }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Tomcat 스레드 풀 (서비스별)",
+      "type": "timeseries",
+      "description": "busy가 max에 근접하면 스레드 풀 고갈 — CB OPEN 시점과 함께 확인",
+      "gridPos": { "x": 0, "y": 43, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "tomcat_threads_busy_threads{job=~\"payment-api|transfer-service\"}", "legendFormat": "{{job}} busy" },
+        { "expr": "tomcat_threads_current_threads{job=~\"payment-api|transfer-service\"}", "legendFormat": "{{job}} current" },
+        { "expr": "tomcat_threads_config_max_threads{job=~\"payment-api|transfer-service\"}", "legendFormat": "{{job}} max" }
+      ]
+    },
+
+    { "id": 103, "title": "── DB ──", "type": "text", "gridPos": { "x": 0, "y": 49, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 11,
+      "title": "HikariCP 커넥션 풀 (서비스별)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 50, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "sum by(job) (hikaricp_connections_active)", "legendFormat": "{{job}} active" },
+        { "expr": "sum by(job) (hikaricp_connections_pending)", "legendFormat": "{{job}} pending" },
+        { "expr": "sum by(job) (hikaricp_connections)", "legendFormat": "{{job}} total" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "MySQL 커넥션 수",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 50, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "mysql_global_status_threads_connected", "legendFormat": "threads connected" },
+        { "expr": "mysql_global_status_max_used_connections", "legendFormat": "max used" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "MySQL QPS (쿼리/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(mysql_global_status_queries[30s])", "legendFormat": "QPS" },
+        { "expr": "rate(mysql_global_status_slow_queries[30s])", "legendFormat": "slow queries/s" }
+      ]
+    },
+
+    { "id": 104, "title": "── Kafka ──", "type": "text", "gridPos": { "x": 0, "y": 62, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 14,
+      "title": "Kafka Consumer Lag (컨슈머 그룹별)",
+      "type": "timeseries",
+      "description": "lag=0 이면 ledger-service·transfer-service가 payment 이벤트를 실시간으로 소비 중",
+      "gridPos": { "x": 0, "y": 63, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "sum by(consumergroup, topic) (kafka_consumergroup_lag)", "legendFormat": "{{consumergroup}} / {{topic}}" }
+      ]
+    }
+  ]
+}
