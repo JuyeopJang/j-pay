@@ -1,9 +1,8 @@
 tasks.named('bootRun') {
     jvmArgs = [
-        '-XX:+UseContainerSupport',
         '-XX:MaxRAMPercentage=75.0',
         '-Xms256m',
-        '-Xmx1g',
+        '-Xmx512m',
         '-Xlog:gc*:stdout:time,level,tags',
     ]
 }

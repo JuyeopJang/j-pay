@@ -16,7 +16,7 @@ public class PaymentCompletedEventConsumer {
     private final LedgerService ledgerService;
     private final ObjectMapper objectMapper;
 
-    @KafkaListener(topics = PaymentCompletedEvent.TOPIC)
+    @KafkaListener(topics = PaymentCompletedEvent.TOPIC, concurrency = "4")
     public void consume(String payload) throws Exception {
         PaymentCompletedEvent event = objectMapper.readValue(payload, PaymentCompletedEvent.class);
         ledgerService.recordPayment(event);
