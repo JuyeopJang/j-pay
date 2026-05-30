@@ -44,8 +44,6 @@ server:
 app:
   snowflake:
     node-id: 3  # payment-api=2, ledger-service=1, transfer-service=3
-  external-bank:
-    base-url: http://localhost:8082  # 자기 자신의 mock 엔드포인트
 
 resilience4j:
   circuitbreaker:
@@ -53,10 +51,23 @@ resilience4j:
       externalBank:
         sliding-window-type: COUNT_BASED
         sliding-window-size: 10
-        failure-rate-threshold: 50         # 10회 중 5회 실패 시 OPEN
-        wait-duration-in-open-state: 10s   # 10초 후 HALF_OPEN 시도
+        failure-rate-threshold: 50             # 10회 중 5회 실패 시 OPEN
+        slow-call-rate-threshold: 50           # 10회 중 5회가 느린 응답이면 OPEN
+        slow-call-duration-threshold: 3s       # readTimeout(5s) 이전에 감지
+        wait-duration-in-open-state: 10s       # 10초 후 HALF_OPEN 시도
         permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
+  retry:
+    instances:
+      externalBank:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - juyeop.jpay.transfer.external.ExternalBankException
+        ignore-exceptions:
+          - juyeop.jpay.transfer.external.ExternalBankCircuitOpenException
 
 management:
   endpoints:

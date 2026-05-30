@@ -8,8 +8,8 @@ spring:
     username: jpay
     password: jpay
     hikari:
-      maximum-pool-size: 25
-      minimum-idle: 5
+      maximum-pool-size: 50        # 25 → 50 (부하 테스트 HikariCP pending 130+ 해소)
+      minimum-idle: 10             # 5  → 10
       connection-timeout: 3000     # 풀에서 커넥션을 기다리는 최대 시간(ms)
       idle-timeout: 600000         # 유휴 커넥션 유지 시간(ms) — 10분
       max-lifetime: 1800000        # 커넥션 최대 수명(ms) — 30분
@@ -44,13 +44,13 @@ resilience4j:
     instances:
       bankTransfer:
         sliding-window-type: COUNT_BASED
-        sliding-window-size: 10
+        sliding-window-size: 20
         minimum-number-of-calls: 5
         failure-rate-threshold: 50
         slow-call-rate-threshold: 70
         slow-call-duration-threshold: 5s
         wait-duration-in-open-state: 30s
-        permitted-number-of-calls-in-half-open-state: 3
+        permitted-number-of-calls-in-half-open-state: 10
         register-health-indicator: true
   retry:
     instances:
@@ -61,11 +61,15 @@ resilience4j:
         exponential-backoff-multiplier: 2
         retry-exceptions:
           - juyeop.jpay.payment.bank.BankTransferException
+        ignore-exceptions:
+          - juyeop.jpay.payment.bank.BankCircuitOpenException
 
 server:
   port: 8080
   shutdown: graceful
   tomcat:
+    mbeanregistry:
+      enabled: true
     threads:
       max: 200
       min-spare: 20

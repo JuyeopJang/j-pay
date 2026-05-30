@@ -1,7 +1,9 @@
 package juyeop.jpay.payment.bank.mock;
 
+import juyeop.jpay.payment.bank.BankTransferException;
 import juyeop.jpay.payment.bank.mock.dto.BankTransferMockRequest;
 import juyeop.jpay.payment.bank.mock.dto.BankTransferMockResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -9,13 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
- * 은행 이체 mock — 매직 넘버 기반 시나리오 트리거.
+ * 은행 이체 mock HTTP 엔드포인트 — curl 등 수동 테스트용.
+ * 내부 호출은 BankTransferClientImpl → BankTransferMockService 직접 호출.
  *
  * <pre>
  * amount = 99999 → 200 OK + INSUFFICIENT_BALANCE 거부
@@ -26,56 +24,18 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @RestController
 @RequestMapping("/internal/bank-mock")
+@RequiredArgsConstructor
 @Slf4j
 public class BankTransferMockController {
 
-	private static final SecureRandom RANDOM = new SecureRandom();
-	private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	private static final Map<String, BankTransferMockResponse> RESPONSES = new ConcurrentHashMap<>();
+    private final BankTransferMockService mockService;
 
-	@PostMapping("/transfer")
-	public ResponseEntity<BankTransferMockResponse> transfer(@RequestBody BankTransferMockRequest request) {
-		long amount = request.amount();
-		long start = System.currentTimeMillis();
-
-		if (amount == 99_997L) {
-			return ResponseEntity.internalServerError().build();
-		}
-
-		if (request.transferId() != null) {
-			return ResponseEntity.ok(RESPONSES.computeIfAbsent(request.transferId(), key -> generate(amount, start)));
-		}
-
-		return ResponseEntity.ok(generate(amount, start));
-	}
-
-	private BankTransferMockResponse generate(long amount, long start) {
-		if (amount == 99_999L) {
-			return new BankTransferMockResponse(null, "INSUFFICIENT_BALANCE", "계좌 잔액 부족", null,
-					System.currentTimeMillis() - start);
-		}
-		if (amount == 99_998L) {
-			sleepQuietly(5_500L);
-			return new BankTransferMockResponse("TRANSFER-LATEZZZZ", null, null, Instant.now(),
-					System.currentTimeMillis() - start);
-		}
-		return new BankTransferMockResponse("TRANSFER-" + randomToken(8), null, null, Instant.now(),
-				System.currentTimeMillis() - start);
-	}
-
-	private static void sleepQuietly(long millis) {
-		try {
-			Thread.sleep(millis);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
-	}
-
-	private static String randomToken(int length) {
-		StringBuilder sb = new StringBuilder(length);
-		for (int i = 0; i < length; i++) {
-			sb.append(ALPHABET.charAt(RANDOM.nextInt(ALPHABET.length())));
-		}
-		return sb.toString();
-	}
+    @PostMapping("/transfer")
+    public ResponseEntity<BankTransferMockResponse> transfer(@RequestBody BankTransferMockRequest request) {
+        try {
+            return ResponseEntity.ok(mockService.process(request));
+        } catch (BankTransferException e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }
