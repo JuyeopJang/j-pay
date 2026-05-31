@@ -1,0 +1,256 @@
+{
+  "title": "j-pay payment-api 운영 대시보드",
+  "uid": "jpay-payment-api",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+
+    { "id": 100, "title": "── 요약 ──", "type": "text", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 1,
+      "title": "TPS",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"payment-api\"}[30s]))", "legendFormat": "TPS" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP p99 지연",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.5 },
+            { "color": "red", "value": 1.0 }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum by(le) (rate(http_server_requests_seconds_bucket{job=\"payment-api\"}[30s])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "에러율 (5xx)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.01 },
+            { "color": "red", "value": 0.05 }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"payment-api\",status=~\"5..\"}[30s])) / sum(rate(http_server_requests_seconds_count{job=\"payment-api\"}[30s]))", "legendFormat": "error rate" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "HikariCP Active",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 15 },
+            { "color": "red", "value": 19 }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+      "targets": [
+        { "expr": "hikaricp_connections_active{job=\"payment-api\"}", "legendFormat": "active" }
+      ]
+    },
+
+    { "id": 101, "title": "── HTTP 트래픽 ──", "type": "text", "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 5,
+      "title": "TPS (엔드포인트별)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=\"payment-api\"}[30s])", "legendFormat": "{{uri}} [{{status}}]" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "응답 지연 p95 / p99 (엔드포인트별)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by(uri, le) (rate(http_server_requests_seconds_bucket{job=\"payment-api\"}[30s])))", "legendFormat": "{{uri}} p95" },
+        { "expr": "histogram_quantile(0.99, sum by(uri, le) (rate(http_server_requests_seconds_bucket{job=\"payment-api\"}[30s])))", "legendFormat": "{{uri}} p99" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "HTTP 에러 (4xx / 5xx)",
+      "description": "4xx: 잔액 부족·검증 오류, 5xx: 서버 오류·CB OPEN",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=\"payment-api\", status=~\"4..\"}[30s])", "legendFormat": "{{uri}} 4xx" },
+        { "expr": "rate(http_server_requests_seconds_count{job=\"payment-api\", status=~\"5..\"}[30s])", "legendFormat": "{{uri}} 5xx" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "멱등성 재시도율 (409 Conflict)",
+      "description": "동일 Idempotency-Key 재요청 건수 — 높으면 클라이언트 재시도 과다",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=\"payment-api\", status=\"409\"}[30s])", "legendFormat": "{{uri}} 409" }
+      ]
+    },
+
+    { "id": 102, "title": "── Circuit Breaker (bankTransfer) ──", "type": "text", "gridPos": { "x": 0, "y": 20, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 9,
+      "title": "CB 상태",
+      "description": "0=CLOSED (정상), 1=OPEN (차단), 2=HALF_OPEN (탐색)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "resilience4j_circuitbreaker_state{job=\"payment-api\"}", "legendFormat": "{{name}} ({{state}})" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "CB 실패율",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        { "expr": "resilience4j_circuitbreaker_failure_rate{job=\"payment-api\"}", "legendFormat": "{{name}} failure rate" },
+        { "expr": "resilience4j_circuitbreaker_slow_call_rate{job=\"payment-api\"}", "legendFormat": "{{name}} slow call rate" }
+      ]
+    },
+
+    { "id": 103, "title": "── JVM 리소스 ──", "type": "text", "gridPos": { "x": 0, "y": 27, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 11,
+      "title": "JVM Heap 사용량",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "sum(jvm_memory_used_bytes{job=\"payment-api\", area=\"heap\"})", "legendFormat": "used" },
+        { "expr": "sum(jvm_memory_committed_bytes{job=\"payment-api\", area=\"heap\"})", "legendFormat": "committed" },
+        { "expr": "sum(jvm_memory_max_bytes{job=\"payment-api\", area=\"heap\"})", "legendFormat": "max" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "GC Pause 시간",
+      "description": "p99 지연 급등 시 GC가 원인인지 확인",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "rate(jvm_gc_pause_seconds_sum{job=\"payment-api\"}[30s])", "legendFormat": "{{cause}} {{action}}" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Tomcat 스레드 풀",
+      "description": "busy가 max에 근접 시 스레드 풀 고갈 — 요청 큐잉 발생",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 34, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "tomcat_threads_busy_threads{job=\"payment-api\"}", "legendFormat": "busy" },
+        { "expr": "tomcat_threads_current_threads{job=\"payment-api\"}", "legendFormat": "current" },
+        { "expr": "tomcat_threads_config_max_threads{job=\"payment-api\"}", "legendFormat": "max" }
+      ]
+    },
+
+    { "id": 104, "title": "── DB (HikariCP) ──", "type": "text", "gridPos": { "x": 0, "y": 40, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 14,
+      "title": "HikariCP 커넥션 풀",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 41, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "hikaricp_connections_active{job=\"payment-api\"}", "legendFormat": "active" },
+        { "expr": "hikaricp_connections_pending{job=\"payment-api\"}", "legendFormat": "pending (대기)" },
+        { "expr": "hikaricp_connections_idle{job=\"payment-api\"}", "legendFormat": "idle" },
+        { "expr": "hikaricp_connections{job=\"payment-api\"}", "legendFormat": "total" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "HikariCP 커넥션 획득 시간 (p99)",
+      "description": "pending이 쌓이면 이 값이 올라감 — DB 병목 신호",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 41, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum by(le) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"payment-api\"}[30s])))", "legendFormat": "acquire p99" },
+        { "expr": "histogram_quantile(0.50, sum by(le) (rate(hikaricp_connections_acquire_seconds_bucket{job=\"payment-api\"}[30s])))", "legendFormat": "acquire p50" }
+      ]
+    },
+
+    { "id": 105, "title": "── Kafka Outbox ──", "type": "text", "gridPos": { "x": 0, "y": 47, "w": 24, "h": 1 }, "options": { "content": "" } },
+    {
+      "id": 16,
+      "title": "Kafka Consumer Lag (payment-api 발행 토픽)",
+      "description": "lag=0: 하위 서비스(ledger, transfer)가 실시간 소비 중. lag 누적 시 이벤트 처리 지연",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 48, "w": 24, "h": 6 },
+      "targets": [
+        { "expr": "sum by(consumergroup, topic) (kafka_consumergroup_lag{topic=~\"charge-completed|payment-completed|user-transfer-completed\"})", "legendFormat": "{{consumergroup}} / {{topic}}" }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Kafka Producer 전송률",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 54, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(kafka_producer_record_send_total{job=\"payment-api\"}[30s])", "legendFormat": "send/s" }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Kafka Producer 에러율",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 54, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "expr": "rate(kafka_producer_record_error_total{job=\"payment-api\"}[30s])", "legendFormat": "error/s" }
+      ]
+    }
+
+  ]
+}
