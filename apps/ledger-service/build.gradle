@@ -1,3 +1,17 @@
+plugins {
+    id 'au.com.dius.pact' version '4.6.14'
+}
+
+pact {
+    publish {
+        pactBrokerUrl = 'http://localhost:9292'
+        pactBrokerUsername = 'pact'
+        pactBrokerPassword = 'pact'
+        version = project.version
+        tags = ['latest']
+    }
+}
+
 dependencies {
     implementation project(':libs:common-core')
     implementation project(':libs:common-event')
@@ -17,4 +31,9 @@ dependencies {
     testImplementation 'org.testcontainers:mysql'
     testImplementation 'org.testcontainers:kafka'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'au.com.dius.pact.consumer:junit5:4.6.14'
+}
+
+test {
+    systemProperty 'pact.rootDir', layout.buildDirectory.dir('pacts').get().asFile.absolutePath
 }

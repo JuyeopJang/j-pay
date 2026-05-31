@@ -82,7 +82,7 @@ class ChargeControllerIntegrationTest extends AbstractPaymentIntegrationTest {
 
         post(key, new ChargeRequest(AMOUNT, BANK_ACCOUNT_ID));
 
-        assertThat(redisTemplate.hasKey("idempotency:" + key)).isTrue();
+        assertThat(redisTemplate.hasKey("payment:idempotency:" + key)).isTrue();
     }
 
     // =========================================================================

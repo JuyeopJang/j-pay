@@ -71,7 +71,7 @@ class PaymentControllerIntegrationTest extends AbstractPaymentIntegrationTest {
 
         post(key, new PaymentRequest(AMOUNT, MERCHANT_ID));
 
-        assertThat(redisTemplate.hasKey("idempotency:" + key)).isTrue();
+        assertThat(redisTemplate.hasKey("payment:idempotency:" + key)).isTrue();
     }
 
     // =========================================================================

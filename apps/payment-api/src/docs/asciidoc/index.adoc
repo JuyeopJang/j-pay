@@ -1,0 +1,116 @@
+= j-pay Payment API
+:doctype: book
+:icons: font
+:source-highlighter: highlightjs
+:toc: left
+:toc-title: 목차
+:toclevels: 3
+:sectlinks:
+
+== 공통 헤더
+
+모든 엔드포인트는 아래 헤더를 필요로 합니다.
+
+[cols="1,1,3"]
+|===
+| 헤더 | 필수 | 설명
+
+| `Idempotency-Key`
+| Y
+| 멱등성 키. UUID 또는 고유 문자열. 동일 키로 재요청 시 이전 결과를 그대로 반환합니다.
+
+| `X-User-Id`
+| Y
+| 인증된 사용자 ID (Long).
+|===
+
+---
+
+== 충전 API
+
+=== POST /charges
+
+잔액을 충전합니다. 은행 계좌에서 출금 후 내부 지갑에 금액을 적립합니다.
+
+==== 요청
+
+include::{snippets}/charges/charge/request-headers.adoc[]
+
+include::{snippets}/charges/charge/request-fields.adoc[]
+
+.요청 예시
+include::{snippets}/charges/charge/http-request.adoc[]
+
+==== 응답
+
+include::{snippets}/charges/charge/response-fields.adoc[]
+
+.응답 예시
+include::{snippets}/charges/charge/http-response.adoc[]
+
+---
+
+== 결제 API
+
+잔액을 차감해 가맹점에 결제합니다. 동시성 제어 전략별로 엔드포인트가 분리되어 있습니다.
+
+[cols="1,3"]
+|===
+| 엔드포인트 | 동시성 전략
+
+| `POST /payments/pessimistic`
+| 비관적 락 (`SELECT ... FOR UPDATE`) — 충돌이 잦을 때 안정적
+
+| `POST /payments/optimistic`
+| 낙관적 락 (`@Version`) — 충돌이 적을 때 높은 처리량
+
+| `POST /payments/redis-lock`
+| Redis 분산 락 (Redisson) — 다중 인스턴스 환경에서 전역 직렬화
+
+| `POST /payments/atomic`
+| Atomic UPDATE (`UPDATE ... WHERE balance >= amount`) — 락 없이 단일 쿼리
+|===
+
+=== POST /payments/pessimistic
+
+==== 요청
+
+include::{snippets}/payments/pessimistic/request-headers.adoc[]
+
+include::{snippets}/payments/pessimistic/request-fields.adoc[]
+
+.요청 예시
+include::{snippets}/payments/pessimistic/http-request.adoc[]
+
+==== 응답
+
+include::{snippets}/payments/pessimistic/response-fields.adoc[]
+
+.응답 예시
+include::{snippets}/payments/pessimistic/http-response.adoc[]
+
+NOTE: `/payments/optimistic`, `/payments/redis-lock`, `/payments/atomic` 도 요청/응답 스키마가 동일합니다.
+
+---
+
+== 송금 API
+
+=== POST /transfers
+
+사용자 간 내부 지갑 송금을 실행합니다. 비관적 락 + lock ordering(userId 오름차순)으로 데드락을 방지합니다.
+
+==== 요청
+
+include::{snippets}/transfers/transfer/request-headers.adoc[]
+
+include::{snippets}/transfers/transfer/request-fields.adoc[]
+
+.요청 예시
+include::{snippets}/transfers/transfer/http-request.adoc[]
+
+==== 응답
+
+include::{snippets}/transfers/transfer/response-fields.adoc[]
+
+.응답 예시
+include::{snippets}/transfers/transfer/http-response.adoc[]
