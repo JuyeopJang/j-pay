@@ -22,28 +22,35 @@ docker compose up -d
 docker compose ps
 ```
 
-MySQL이 `healthy` 상태일 때까지 대기 (보통 15~30초).
+4개 MySQL 컨테이너(`mysql-payment`, `mysql-ledger`, `mysql-transfer`, `mysql-batch`) 모두 `healthy` 상태일 때까지 대기 (보통 20~40초).
+
+| 서비스 | 컨테이너 | 호스트 포트 |
+|---|---|---|
+| payment-api | jpay-mysql-payment | 3307 |
+| ledger-service | jpay-mysql-ledger | 3308 |
+| transfer-service | jpay-mysql-transfer | 3309 |
+| batch-app | jpay-mysql-batch | 3310 |
 
 ---
 
 ## 2단계: 초기 데이터 세팅
 
-### 잔액 데이터 (payment_db)
+### 잔액 데이터 (payment-api DB, 3307)
 
 userId 1~500, 잔액 1,000,000원으로 초기화한다.
 
 ```sh
-mysql -h 127.0.0.1 -P 3306 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
+mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
 ```
 
 재실행 시 `ON DUPLICATE KEY UPDATE`로 잔액이 1,000,000원으로 리셋된다.
 
-### 원장 계정 데이터 (ledger_db)
+### 원장 계정 데이터 (ledger-service DB, 3308)
 
 ledger-service가 이벤트를 처리하려면 accounts 레코드가 사전에 존재해야 한다.
 
 ```sh
-mysql -h 127.0.0.1 -P 3306 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
+mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
 ```
 
 - `OPERATING_CASH` (owner_id=0): 충전 시 운영 자금 계정
@@ -172,18 +179,25 @@ k6 run \
 
 시나리오 1 종료 후 **30초 이상 대기** (Outbox 폴러 처리 시간 확보) 후 실행.
 
+DB per service 분리로 검증 스크립트를 두 DB에 나눠 실행한다.
+
 ```sh
-mysql -h 127.0.0.1 -P 3306 -u jpay -pjpay < load-tests/verify/consistency-check.sql
+# payment-api DB (3307) — 잔액 음수, Outbox 미발행, 결제/충전 건수 및 금액
+mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/consistency-check-payment.sql
+
+# ledger-service DB (3308) — 복식부기, 원장 건수 및 금액
+mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/consistency-check-ledger.sql
 ```
 
-**4개 쿼리 모두 `violation_count = 0`이어야 통과.**
+**통과 조건:**
 
-| 검증 항목 | 의미 |
-|---|---|
-| CHECK_1: balance_negative | 잔액 음수 → 동시성 제어 실패 |
-| CHECK_2: payment_ledger_mismatch | 결제 수 ≠ 원장 수 → 이중 원장 누락 |
-| CHECK_3: double_entry_imbalance | 차변 합 ≠ 대변 합 → 복식부기 위반 |
-| CHECK_4: outbox_unpublished | 미발행 Outbox 잔존 → 이벤트 유실 |
+| 검증 항목 | DB | 의미 |
+|---|---|---|
+| CHECK_1: balance_negative | payment | 잔액 음수 → 동시성 제어 실패 |
+| CHECK_2a/2b: count | payment ↔ ledger | 결제/충전 건수 cross-check (두 결과 값 일치해야 함) |
+| CHECK_3: double_entry_imbalance | ledger | 차변 합 ≠ 대변 합 → 복식부기 위반 |
+| CHECK_4: outbox_unpublished | payment | 미발행 Outbox 잔존 → 이벤트 유실 |
+| CHECK_5a/5b: amount | payment ↔ ledger | 결제/충전 금액 cross-check (두 결과 값 일치해야 함) |
 
 ---
 
@@ -197,8 +211,8 @@ docker compose down -v
 docker compose up -d
 
 # 2. 데이터 재세팅 (MySQL healthy 확인 후)
-mysql -h 127.0.0.1 -P 3306 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
-mysql -h 127.0.0.1 -P 3306 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
+mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
+mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
 ```
 
 > 시나리오 1은 동일 키(`charge-${uid}-${__ITER}`)로 재실행하면 모든 요청이 idempotency replay로 처리된다. 반드시 DB를 초기화해야 한다.

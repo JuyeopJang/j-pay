@@ -1,5 +1,5 @@
 -- 부하 테스트용 user_balance 500건 초기 데이터
--- 실행: mysql -u jpay -pjpay payment_db < seed-user-balance.sql
+-- 실행: mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
 -- user_id 1~500, 초기 잔액 1,000,000원 (충전 없이도 결제 10,000회 가능)
 
 USE payment_db;
