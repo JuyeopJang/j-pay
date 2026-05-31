@@ -1,16 +1,18 @@
 package juyeop.jpay.common.idempotency;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
 import java.util.Optional;
 
-@RequiredArgsConstructor
 public class RedisIdempotencyStore implements IdempotencyStore {
 	private final StringRedisTemplate redisTemplate;
+	private final String keyPrefix;
 
-	private static final String KEY_PREFIX = "idempotency:%s";
+	public RedisIdempotencyStore(StringRedisTemplate redisTemplate, String keyPrefix) {
+		this.redisTemplate = redisTemplate;
+		this.keyPrefix = keyPrefix;
+	}
 
 	@Override
 	public Optional<String> load(String key) {
@@ -23,6 +25,6 @@ public class RedisIdempotencyStore implements IdempotencyStore {
 	}
 
 	private String resolveKey(String key) {
-		return String.format(KEY_PREFIX, key);
+		return keyPrefix + key;
 	}
 }
