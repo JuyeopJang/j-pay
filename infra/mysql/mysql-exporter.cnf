@@ -1,5 +1,5 @@
 [client]
-host=mysql
+host=mysql-payment
 port=3306
 user=jpay
 password=jpay

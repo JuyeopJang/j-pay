@@ -10,21 +10,99 @@
 #   Grafana   : http://localhost:3000  (admin / admin)
 #   Prometheus: http://localhost:9090
 #   Zipkin    : http://localhost:9411
+#
+# DB per service — 서비스별 독립 MySQL 인스턴스
+#   mysql-payment  : 3307  (payment_db)
+#   mysql-ledger   : 3308  (ledger_db)
+#   mysql-transfer : 3309  (transfer_db)
+#   mysql-batch    : 3310  (batch_db)
 
 services:
-  mysql:
+  mysql-payment:
     image: mysql:8.4
-    container_name: jpay-mysql
+    container_name: jpay-mysql-payment
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpw
       MYSQL_USER: jpay
       MYSQL_PASSWORD: jpay
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
-      - mysql-data:/var/lib/mysql
-      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
+      - mysql-payment-data:/var/lib/mysql
+      - ./infra/mysql/payment/init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+09:00
+      --innodb-default-row-format=DYNAMIC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mysql-ledger:
+    image: mysql:8.4
+    container_name: jpay-mysql-ledger
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: jpay
+      MYSQL_PASSWORD: jpay
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql-ledger-data:/var/lib/mysql
+      - ./infra/mysql/ledger/init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+09:00
+      --innodb-default-row-format=DYNAMIC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mysql-transfer:
+    image: mysql:8.4
+    container_name: jpay-mysql-transfer
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: jpay
+      MYSQL_PASSWORD: jpay
+    ports:
+      - "3309:3306"
+    volumes:
+      - mysql-transfer-data:/var/lib/mysql
+      - ./infra/mysql/transfer/init:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+09:00
+      --innodb-default-row-format=DYNAMIC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mysql-batch:
+    image: mysql:8.4
+    container_name: jpay-mysql-batch
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: jpay
+      MYSQL_PASSWORD: jpay
+    ports:
+      - "3310:3306"
+    volumes:
+      - mysql-batch-data:/var/lib/mysql
+      - ./infra/mysql/batch/init:/docker-entrypoint-initdb.d:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
@@ -84,6 +162,7 @@ services:
 
   # kafka-exporter: docker 내부에서 Kafka consumer lag 등 지표를 수집해 Prometheus에 노출
   # INTERNAL 리스너(29092)로 접근 — 호스트용 PLAINTEXT(9092)와 분리
+  # payment-api MySQL 메트릭만 수집 — 부하 테스트 핵심 타깃
   mysql-exporter:
     image: prom/mysqld-exporter:latest
     container_name: jpay-mysql-exporter
@@ -93,7 +172,7 @@ services:
     ports:
       - "9104:9104"
     depends_on:
-      mysql:
+      mysql-payment:
         condition: service_healthy
 
   redis-exporter:
@@ -154,8 +233,23 @@ services:
     ports:
       - "9411:9411"
 
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    container_name: jpay-pact-broker
+    restart: unless-stopped
+    ports:
+      - "9292:9292"
+    environment:
+      PACT_BROKER_DATABASE_URL: sqlite:////tmp/pact_broker/pacts.sqlite
+      PACT_BROKER_BASIC_AUTH_USERNAME: pact
+      PACT_BROKER_BASIC_AUTH_PASSWORD: pact
+      PACT_BROKER_ALLOW_PUBLIC_READ: "false"
+
 volumes:
-  mysql-data:
+  mysql-payment-data:
+  mysql-ledger-data:
+  mysql-transfer-data:
+  mysql-batch-data:
   redis-data:
   prometheus-data:
   grafana-data:

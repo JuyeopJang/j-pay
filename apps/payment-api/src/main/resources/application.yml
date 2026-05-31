@@ -4,7 +4,7 @@ spring:
 
   datasource:
     driver-class-name: com.p6spy.engine.spy.P6SpyDriver
-    url: jdbc:p6spy:mysql://localhost:3306/payment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=5000
+    url: jdbc:p6spy:mysql://localhost:3307/payment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=3000&socketTimeout=5000
     username: jpay
     password: jpay
     hikari:
@@ -37,7 +37,9 @@ spring:
 
 app:
   snowflake:
-    node-id: 2   # ledger-service=1, payment-api=2 (인스턴스마다 unique 보장)
+    node-id: ${APP_SNOWFLAKE_NODE_ID:2}   # 다중 인스턴스 시 APP_SNOWFLAKE_NODE_ID 환경변수로 주입 (0~1023)
+  redis:
+    key-prefix: payment   # Redis 키 네임스페이스 — payment:idempotency:*, payment:lock:* 로 격리
 
 resilience4j:
   circuitbreaker:
