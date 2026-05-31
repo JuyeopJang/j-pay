@@ -3,6 +3,7 @@ package juyeop.jpay.transfer.service;
 import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.event.TransferRequestedEvent;
 import juyeop.jpay.transfer.entity.Transfer;
+import juyeop.jpay.transfer.entity.TransferStatus;
 import juyeop.jpay.transfer.external.ExternalBankClient;
 import juyeop.jpay.transfer.external.ExternalBankException;
 import juyeop.jpay.transfer.external.dto.ExternalBankTransferRequest;
@@ -34,11 +35,11 @@ public class TransferService {
             log.warn("Idempotency conflict on transfer: externalId={}", event.externalId());
             return;
         }
-        switch (existing.getStatus()) {
-            case COMPLETED -> transferEventProducer.publishCompleted(existing);
-            case FAILED    -> transferEventProducer.publishFailed(existing);
-            case PENDING   -> log.info("Transfer still PENDING, skip replay: externalId={}", event.externalId());
+        if (existing.getStatus() == TransferStatus.PENDING) {
+            log.info("Transfer still PENDING, skip replay: externalId={}", event.externalId());
+            return;
         }
+        existing.getStatus().onReplay(existing, transferEventProducer);
     }
 
     private void process(TransferRequestedEvent event) {
