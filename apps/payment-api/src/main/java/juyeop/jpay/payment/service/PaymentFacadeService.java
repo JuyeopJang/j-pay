@@ -18,7 +18,6 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -36,10 +35,7 @@ public class PaymentFacadeService {
 			backoff = @Backoff(delay = 50, maxDelay = 500, multiplier = 1.5, random = true)
 	)
 	public PaymentResponse payOptimistic(String idempotencyKey, Long userId, PaymentRequest request) {
-		return paymentService.findByExternalId(idempotencyKey)
-				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(idempotencyKey, userId, request,
-						() -> paymentService.deductAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
+		return pay(idempotencyKey, userId, request, paymentService::deductAndComplete);
 	}
 
 	// Spring Retry는 non-retryable 예외도 recover로 라우팅한다. BusinessException은 그대로 재전파.
@@ -50,17 +46,11 @@ public class PaymentFacadeService {
 	}
 
 	public PaymentResponse payPessimistic(String idempotencyKey, Long userId, PaymentRequest request) {
-		return paymentService.findByExternalId(idempotencyKey)
-				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(idempotencyKey, userId, request,
-						() -> paymentService.deductPessimisticAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
+		return pay(idempotencyKey, userId, request, paymentService::deductPessimisticAndComplete);
 	}
 
 	public PaymentResponse payAtomic(String idempotencyKey, Long userId, PaymentRequest request) {
-		return paymentService.findByExternalId(idempotencyKey)
-				.map(existing -> replay(existing, userId, request))
-				.orElseGet(() -> process(idempotencyKey, userId, request,
-						() -> paymentService.deductAtomicAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId())));
+		return pay(idempotencyKey, userId, request, paymentService::deductAtomicAndComplete);
 	}
 
 	public PaymentResponse payWithRedisLock(String idempotencyKey, Long userId, PaymentRequest request) {
@@ -72,12 +62,18 @@ public class PaymentFacadeService {
 						throw new BusinessException(PaymentErrorType.DISTRIBUTED_LOCK_ACQUISITION_FAILED);
 					}
 					try {
-						return process(idempotencyKey, userId, request,
-								() -> paymentService.deductAndComplete(idempotencyKey, userId, Money.of(request.amount()), request.merchantId()));
+						return process(idempotencyKey, userId, request, paymentService::deductAndComplete);
 					} finally {
 						distributedLockRepository.release(lockKey);
 					}
 				});
+	}
+
+	private PaymentResponse pay(String idempotencyKey, Long userId, PaymentRequest request,
+								PaymentExecutionStrategy strategy) {
+		return paymentService.findByExternalId(idempotencyKey)
+				.map(existing -> replay(existing, userId, request))
+				.orElseGet(() -> process(idempotencyKey, userId, request, strategy));
 	}
 
 	private PaymentResponse replay(Payment payment, Long userId, PaymentRequest request) {
@@ -86,9 +82,11 @@ public class PaymentFacadeService {
 		return PaymentResponse.from(payment);
 	}
 
-	private PaymentResponse process(String idempotencyKey, Long userId, PaymentRequest request, Supplier<Payment> supplier) {
+	private PaymentResponse process(String idempotencyKey, Long userId, PaymentRequest request,
+									PaymentExecutionStrategy strategy) {
 		try {
-			return PaymentResponse.from(supplier.get());
+			return PaymentResponse.from(
+					strategy.execute(idempotencyKey, userId, Money.of(request.amount()), request.merchantId()));
 		} catch (DataIntegrityViolationException e) {
 			Payment existing = paymentService.findByExternalId(idempotencyKey)
 					.orElseThrow(() -> new IllegalStateException("UNIQUE conflict but row not found"));

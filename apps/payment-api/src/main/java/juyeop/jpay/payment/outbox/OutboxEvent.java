@@ -1,5 +1,7 @@
 package juyeop.jpay.payment.outbox;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -39,6 +41,14 @@ public class OutboxEvent {
         event.payload = payload;
         event.createdAt = Instant.now();
         return event;
+    }
+
+    public static OutboxEvent create(Long id, String topic, Object eventPayload, ObjectMapper mapper) {
+        try {
+            return create(id, topic, mapper.writeValueAsString(eventPayload));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize outbox event: topic=" + topic, e);
+        }
     }
 
     public void markPublished() {

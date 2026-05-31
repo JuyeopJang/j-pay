@@ -1,11 +1,12 @@
 package juyeop.jpay.payment.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.event.ChargeCompletedEvent;
 import juyeop.jpay.payment.entity.Charge;
+import juyeop.jpay.common.web.error.BusinessException;
 import juyeop.jpay.payment.exception.BalanceNotFoundException;
+import juyeop.jpay.payment.exception.PaymentErrorType;
 import juyeop.jpay.payment.outbox.OutboxEvent;
 import juyeop.jpay.payment.outbox.OutboxEventRepository;
 import juyeop.jpay.payment.repository.ChargeRepository;
@@ -40,17 +41,17 @@ public class ChargeService {
 
 	@Transactional
 	public Charge failCharge(Long chargeId, String failureReason, String bankResponseMeta) {
-		Charge charge = chargeRepository.findById(chargeId).orElseThrow(() -> new IllegalStateException("Charge not found: " + chargeId));
+		Charge charge = chargeRepository.findById(chargeId).orElseThrow(() -> new BusinessException(PaymentErrorType.CHARGE_NOT_FOUND));
 		charge.fail(failureReason, bankResponseMeta);
 		return charge;
 	}
 
 	@Retryable(retryFor = DataAccessException.class,
-			noRetryFor = {IllegalStateException.class, BalanceNotFoundException.class},
+			noRetryFor = {BusinessException.class, BalanceNotFoundException.class},
 			maxAttempts = 3, backoff = @Backoff(delay = 100, multiplier = 2, maxDelay = 1000))
 	@Transactional
 	public Charge completeWithCreditAndOutbox(Long chargeId, String transferRef, String bankResponseMeta) {
-		Charge charge = chargeRepository.findById(chargeId).orElseThrow(() -> new IllegalStateException("Charge not found: " + chargeId));
+		Charge charge = chargeRepository.findById(chargeId).orElseThrow(() -> new BusinessException(PaymentErrorType.CHARGE_NOT_FOUND));
 		charge.complete(transferRef, bankResponseMeta);
 		userBalanceTxService.deposit(charge.getUserId(), charge.getAmount());
 		outboxEventRepository.save(buildOutboxEvent(charge));
@@ -58,13 +59,8 @@ public class ChargeService {
 	}
 
 	private OutboxEvent buildOutboxEvent(Charge charge) {
-		ChargeCompletedEvent event = new ChargeCompletedEvent(
-				charge.getId(), charge.getUserId(), charge.getAmount().amount(), Instant.now());
-		try {
-			return OutboxEvent.create(charge.getId(), ChargeCompletedEvent.TOPIC,
-					objectMapper.writeValueAsString(event));
-		} catch (JsonProcessingException e) {
-			throw new RuntimeException(e);
-		}
+		return OutboxEvent.create(charge.getId(), ChargeCompletedEvent.TOPIC,
+				new ChargeCompletedEvent(charge.getId(), charge.getUserId(), charge.getAmount().amount(), Instant.now()),
+				objectMapper);
 	}
 }

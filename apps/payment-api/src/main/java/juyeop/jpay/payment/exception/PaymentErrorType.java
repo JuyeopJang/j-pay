@@ -28,8 +28,27 @@ public enum PaymentErrorType implements ErrorType {
 	DISTRIBUTED_LOCK_ACQUISITION_FAILED(
 			"distributed-lock-acquisition-failure",
 			"Concurrent Modification Conflict",
-			HttpStatus.CONFLICT
-	);
+			HttpStatus.CONFLICT),
+
+	TRANSFER_TO_SELF(
+			"transfer-to-self",
+			"Cannot Transfer To Self",
+			HttpStatus.BAD_REQUEST),
+
+	RECEIVER_NOT_FOUND(
+			"receiver-not-found",
+			"Receiver Balance Not Found",
+			HttpStatus.NOT_FOUND),
+
+	CHARGE_NOT_FOUND(
+			"charge-not-found",
+			"Charge Not Found",
+			HttpStatus.NOT_FOUND),
+
+	PAYMENT_NOT_FOUND(
+			"payment-not-found",
+			"Payment Not Found",
+			HttpStatus.NOT_FOUND);
 
 	private final String slug;
 	private final String title;

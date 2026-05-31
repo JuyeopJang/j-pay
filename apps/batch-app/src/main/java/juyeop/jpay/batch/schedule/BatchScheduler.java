@@ -36,11 +36,7 @@ public class BatchScheduler {
                 .addString("periodEnd", yesterday.toString())
                 .addLong("runId", System.currentTimeMillis())
                 .toJobParameters();
-        try {
-            jobLauncher.run(settlementJob, params);
-        } catch (Exception e) {
-            log.error("Settlement job failed: {}", e.getMessage(), e);
-        }
+        executeJob(settlementJob, params);
     }
 
     @Scheduled(cron = "0 30 2 * * *")
@@ -50,10 +46,14 @@ public class BatchScheduler {
                 .addString("reconciliationDate", yesterday.toString())
                 .addLong("runId", System.currentTimeMillis())
                 .toJobParameters();
+        executeJob(reconciliationJob, params);
+    }
+
+    private void executeJob(Job job, JobParameters params) {
         try {
-            jobLauncher.run(reconciliationJob, params);
+            jobLauncher.run(job, params);
         } catch (Exception e) {
-            log.error("Reconciliation job failed: {}", e.getMessage(), e);
+            log.error("{} failed: {}", job.getName(), e.getMessage(), e);
         }
     }
 }

@@ -1,10 +1,11 @@
 package juyeop.jpay.payment.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import juyeop.jpay.common.core.Money;
 import juyeop.jpay.common.event.PaymentCompletedEvent;
+import juyeop.jpay.common.web.error.BusinessException;
 import juyeop.jpay.payment.entity.Payment;
+import juyeop.jpay.payment.exception.PaymentErrorType;
 import juyeop.jpay.payment.outbox.OutboxEvent;
 import juyeop.jpay.payment.outbox.OutboxEventRepository;
 import juyeop.jpay.payment.repository.PaymentRepository;
@@ -59,19 +60,15 @@ public class PaymentService {
 	@Transactional
 	public Payment failPayment(Long paymentId, String reason) {
 		Payment payment = paymentRepository.findById(paymentId)
-				.orElseThrow(() -> new IllegalStateException("Payment not found: " + paymentId));
+				.orElseThrow(() -> new BusinessException(PaymentErrorType.PAYMENT_NOT_FOUND));
 		payment.fail(reason);
 		return payment;
 	}
 
 	private OutboxEvent buildOutboxEvent(Payment payment) {
-		PaymentCompletedEvent event = new PaymentCompletedEvent(
-				payment.getId(), payment.getUserId(), payment.getMerchantId(), payment.getAmount().amount(), Instant.now());
-		try {
-			return OutboxEvent.create(payment.getId(), PaymentCompletedEvent.TOPIC,
-					objectMapper.writeValueAsString(event));
-		} catch (JsonProcessingException e) {
-			throw new RuntimeException(e);
-		}
+		return OutboxEvent.create(payment.getId(), PaymentCompletedEvent.TOPIC,
+				new PaymentCompletedEvent(payment.getId(), payment.getUserId(), payment.getMerchantId(),
+						payment.getAmount().amount(), Instant.now()),
+				objectMapper);
 	}
 }
