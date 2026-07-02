@@ -69,5 +69,5 @@ app:
     base-url: http://localhost:8080
   transfer-service:
     base-url: http://localhost:8082
-  settlement:
-    default-bank-account-id: DEMO-MERCHANT-ACCOUNT-001
+  snowflake:
+    node-id: 4

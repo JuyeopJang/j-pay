@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
 
@@ -33,5 +35,11 @@ public class PaymentDataSourceConfig {
     @Bean
     public JdbcTemplate paymentJdbcTemplate(@Qualifier("paymentDataSource") DataSource paymentDataSource) {
         return new JdbcTemplate(paymentDataSource);
+    }
+
+    @Bean
+    public PlatformTransactionManager paymentTransactionManager(
+            @Qualifier("paymentDataSource") DataSource paymentDataSource) {
+        return new DataSourceTransactionManager(paymentDataSource);
     }
 }

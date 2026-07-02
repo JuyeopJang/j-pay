@@ -13,6 +13,4 @@ public interface ChargeRepository extends JpaRepository<Charge, Long> {
 	Optional<Charge> findByExternalId(String externalId);
 
 	List<Charge> findByStatusAndCompletedAtBetween(ChargeStatus status, Instant from, Instant to);
-
-	List<Charge> findByStatusAndRequestedAtBefore(ChargeStatus status, Instant threshold);
 }
