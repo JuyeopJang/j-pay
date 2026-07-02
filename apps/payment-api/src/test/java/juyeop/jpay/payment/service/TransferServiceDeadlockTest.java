@@ -120,6 +120,7 @@ class TransferServiceDeadlockTest extends AbstractPaymentIntegrationTest {
 
         long balanceA = userBalanceRepository.findByUserId(USER_A).orElseThrow().getBalance().amount();
         long balanceB = userBalanceRepository.findByUserId(USER_B).orElseThrow().getBalance().amount();
-        assertThat(balanceA + balanceB).isEqualTo(INITIAL_BALANCE * 2);
+        assertThat(balanceA).isEqualTo(INITIAL_BALANCE);
+        assertThat(balanceB).isEqualTo(INITIAL_BALANCE);
     }
 }
