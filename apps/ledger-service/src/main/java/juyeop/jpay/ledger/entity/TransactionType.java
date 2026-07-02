@@ -4,7 +4,5 @@ public enum TransactionType {
 	CHARGE,
 	PAYMENT,
 	TRANSFER,
-	REFUND,
-	SETTLEMENT,
-	RECON_ADJUST
+	REFUND
 }

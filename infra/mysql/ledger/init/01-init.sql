@@ -34,7 +34,7 @@ CREATE TABLE ledger_transactions (
     INDEX idx_lt_occurred (occurred_at),
     CONSTRAINT chk_lt_total_amount_pos CHECK (total_amount > 0),
     CONSTRAINT chk_lt_type             CHECK (transaction_type IN (
-        'CHARGE', 'PAYMENT', 'TRANSFER', 'REFUND', 'SETTLEMENT', 'RECON_ADJUST'
+        'CHARGE', 'PAYMENT', 'TRANSFER', 'REFUND'
     )),
     CONSTRAINT chk_lt_status           CHECK (transaction_status IN ('POSTED', 'REVERSED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
