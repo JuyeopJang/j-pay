@@ -27,6 +27,8 @@ public abstract class AbstractPaymentIntegrationTest {
         registry.add("spring.datasource.url", mysql::getJdbcUrl);
         registry.add("spring.datasource.username", mysql::getUsername);
         registry.add("spring.datasource.password", mysql::getPassword);
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "20");
+        registry.add("spring.datasource.hikari.minimum-idle", () -> "20");
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
     }

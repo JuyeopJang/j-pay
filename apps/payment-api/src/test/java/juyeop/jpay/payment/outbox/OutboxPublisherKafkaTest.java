@@ -25,7 +25,8 @@ import static org.awaitility.Awaitility.await;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
                 "spring.jpa.hibernate.ddl-auto=create-drop",
-                "app.snowflake.node-id=99"
+                "app.snowflake.node-id=99",
+                "app.scheduling.enabled=true"
         }
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
