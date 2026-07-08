@@ -59,7 +59,8 @@ replay_pid*
 infra/data/
 
 ### Personal docs / notes (로컬 전용 — 학습 노트, 설계 spec 등) ###
-/docs/
+/docs/*
+!/docs/images/
 
 ### Test reports / temp ###
 /coverage/
