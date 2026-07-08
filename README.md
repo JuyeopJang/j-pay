@@ -26,7 +26,7 @@ flowchart TD
 
     subgraph App["App EC2 — c5.xlarge · Spring Boot 단일 앱"]
         direction TB
-        Charge["충전 API + Bank Mock\nThread.sleep 200~500ms ← 병목"]
+        Charge[충전 API]
         Pay[결제 API]
         Transfer[이체 API]
         Ledger["원장 기록 (동기, 트랜잭션 내)"]
@@ -52,7 +52,7 @@ flowchart TD
 
     subgraph App1["App EC2 #1 — c5.xlarge · payment-api (node-id=1)"]
         direction TB
-        C1["충전 API + Bank Mock"]
+        C1[충전 API]
         C2[결제 API]
         C3[이체 API]
         C4[Outbox 메시지 저장]
@@ -60,7 +60,7 @@ flowchart TD
 
     subgraph App2["App EC2 #2 — c5.xlarge · payment-api (node-id=2)"]
         direction TB
-        D1["충전 API + Bank Mock"]
+        D1[충전 API]
         D2[결제 API]
         D3[이체 API]
         D4[Outbox 메시지 저장]
