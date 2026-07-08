@@ -29,7 +29,7 @@ flowchart TD
         Charge[충전 API]
         Pay[결제 API]
         Transfer[이체 API]
-        Ledger["원장 기록 (동기, 트랜잭션 내)"]
+        Note["※ 각 API 트랜잭션 내 원장 기록 (동기)"]
     end
 
     App --> Infra
