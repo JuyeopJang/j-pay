@@ -3,8 +3,7 @@ rootProject.name = 'j-pay'
 // Apps — independently deployable Spring Boot applications
 include 'apps:payment-api'
 include 'apps:ledger-service'
-include 'apps:transfer-service'
-include 'apps:batch-app'
+include 'apps:charge-recovery'
 
 // Libs — shared libraries (no main(), no deployment)
 include 'libs:common-core'

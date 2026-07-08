@@ -1,6 +1,6 @@
 spring:
   application:
-    name: batch-app
+    name: charge-recovery
 
   datasource:
     # jdbc-url 사용 — PaymentDataSourceConfig에서 @Primary DataSource를 명시 등록할 때 HikariCP 직접 바인딩이 필요
