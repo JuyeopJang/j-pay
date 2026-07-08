@@ -1,19 +1,10 @@
--- 부하 테스트용 user_balance 500건 초기 데이터
--- 실행: mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
--- user_id 1~500, 초기 잔액 1,000,000원 (충전 없이도 결제 10,000회 가능)
+-- 부하 테스트용 user_balance 500만 건 초기 데이터
+-- EC2에서 직접 실행: bash load-tests/verify/seed-user-balance.sh
+-- user_id 1~5,000,000, 초기 잔액 1,000,000원
+-- 주의: 5M 행 삽입으로 약 10~20분 소요
 
 USE payment_db;
 
-INSERT INTO user_balance (id, user_id, balance, version)
-WITH RECURSIVE seq (n) AS (
-    SELECT 1
-    UNION ALL
-    SELECT n + 1 FROM seq WHERE n < 500
-)
-SELECT
-    n,          -- id (1~500, snowflake 아님 — 테스트 전용)
-    n,          -- user_id
-    1000000,    -- 초기 잔액 1,000,000원
-    0           -- version
-FROM seq
-ON DUPLICATE KEY UPDATE balance = 1000000, version = 0;
+SET SESSION cte_max_recursion_depth = 100000;
+
+-- 50 배치 × 100,000건 = 5,000,000건

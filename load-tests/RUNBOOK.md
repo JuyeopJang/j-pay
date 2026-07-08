@@ -1,219 +1,328 @@
 # 부하 테스트 실행 가이드
 
-## 사전 요구사항
+## 목적
 
-- **k6** v0.46 이상 (`brew install k6`)
-- **Docker Desktop** 실행 중
-- **JDK 21** (`java -version`으로 확인)
+모놀리식 병목 실측 → MSA 전환 후 목표 달성을 데이터로 증명한다.
+
+- **모놀리식**: 단일 앱, 동기 원장, 스레드풀 소진으로 TPS 상한 발생
+- **MSA**: payment-api 수평 확장, 원장 비동기(Kafka)로 TPS 목표 달성
+
+부하 생성기: **NGrinder** (EC2 c5.xlarge)
+대상 서버: **AWS EC2** (ap-northeast-2)
 
 ---
 
-## 1단계: 인프라 기동
+## Phase 1 — 모놀리식 부하 테스트 ✅ 완료
+
+### 최종 결과 (5차, 현실적 시나리오)
+
+| 지표 | 값 |
+|---|---|
+| TPS | **757.8** (Peak 1,000) |
+| Mean Test Time | 250ms |
+| Tomcat busy threads | 포화 (App CPU 77.6%) |
+| HikariCP active | 안정 (Infra CPU 58.2%) |
+| Error rate | **0%** |
+| Executed Tests | 671,549건 |
+| 누적 정합성 검증 | imbalance = 0 |
+
+**테스트 시나리오**: 충전 30% / 결제 60% / 이체 10%, 랜덤 userId (5M 풀)
+
+**병목 결론**: bank mock `Thread.sleep(200~500ms random)`으로 충전 스레드 지속 점유. 결제·이체는 빠르나 전체 앱을 함께 Scale-out해야 하는 모놀리식 구조의 한계 확인. 단일 인스턴스 TPS 상한 ~760.
+
+### 참고 — 시나리오 개선 과정
+
+| 차수 | TPS | Error | 주요 변경 |
+|---|---|---|---|
+| 4차 | 633.3 | 4.3% | random userId, 충전+결제 교번, bank mock 200ms 고정 |
+| 5차 | **757.8** | **0%** | 역할 분리(30/60/10), 랜덤 userId 5M, bank mock 200~500ms random, deposit 비관락 |
+
+---
+
+### EC2 구성
+
+| 인스턴스 ID | 타입 | 역할 |
+|---|---|---|
+| i-0751634ea06f47983 | c5.xlarge | Infra (MySQL:3306, Redis:6379) |
+| i-0388d423a421fc16f | c5.xlarge | App (payment-api:8080) |
+| i-008436887ef8e132b | c5.xlarge | NGrinder (Controller:8300 + Agent) |
+
+Key Pair: `~/.ssh/jpay-load-test.pem`
+Security Group: Infra(sg-01ef0fec942c1ecf6), App(sg-0ca47b19f25c993b5), NGrinder(sg-0406654475503634e)
+> App SG에 NGrinder SG → 8080 인바운드 허용 추가됨
+
+### 재시작 절차
+
+#### 1단계: EC2 3대 시작
 
 ```sh
-# 프로젝트 루트에서 실행
-docker compose down -v   # 이전 데이터 완전 초기화 (최초 실행 또는 재시작 시)
+aws ec2 start-instances --instance-ids i-0751634ea06f47983 i-0388d423a421fc16f i-008436887ef8e132b
+aws ec2 wait instance-running --instance-ids i-0751634ea06f47983 i-0388d423a421fc16f i-008436887ef8e132b
+
+# IP 확인
+aws ec2 describe-instances --instance-ids i-0751634ea06f47983 \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text  # Infra
+
+aws ec2 describe-instances --instance-ids i-0388d423a421fc16f \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text  # App
+
+aws ec2 describe-instances --instance-ids i-008436887ef8e132b \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text  # NGrinder
+```
+
+> Private IP는 고정: Infra=172.31.1.32, App=172.31.10.127
+
+#### 2단계: Infra EC2 — MySQL + Redis 기동
+
+```sh
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<INFRA_IP>
+sudo docker compose ps   # 내려가 있으면:
+sudo docker compose up -d
+```
+
+#### 3단계: App EC2 — payment-api 기동
+
+```sh
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<APP_IP>
+
+nohup java -jar ~/payment-api.jar \
+  --spring.datasource.url='jdbc:mysql://172.31.1.32:3306/payment_db?characterEncoding=UTF-8&serverTimezone=Asia/Seoul' \
+  --spring.datasource.username=jpay \
+  --spring.datasource.password=jpay \
+  --spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver \
+  --spring.data.redis.host=172.31.1.32 \
+  --spring.data.redis.port=6379 \
+  --app.snowflake.node-id=1 \
+  > ~/app.log 2>&1 &
+
+curl http://172.31.10.127:8080/actuator/health
+```
+
+#### 4단계: NGrinder — Validate
+
+NGrinder UI: `http://<NGRINDER_IP>:8300` (admin / admin)
+
+- Admin → Agent Management → agent Approved 확인
+- Script → ChargeTest → Validate 실행
+- 통과 기준: charges 201, payments/pessimistic 201, Errors 0
+
+#### 5단계: 부하 테스트 실행
+
+NGrinder UI → Performance Test → Create Test (또는 이전 테스트 Clone)
+
+| 항목 | 값 |
+|---|---|
+| Script | ChargeTest |
+| Vuser per Agent | 198 |
+| Duration | 15분 |
+| Ramp-Up | Enable / Initial 10 / Interval 30s / Step 10 |
+
+메트릭 수집 (로컬 터미널에서 동시 실행):
+
+```sh
+bash /tmp/collect-metrics.sh
+```
+
+#### 6단계: 정합성 검증
+
+```sh
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<INFRA_IP>
+
+sudo docker exec jpay-mysql mysql -u jpay -pjpay payment_db -e "
+SELECT COUNT(*) AS balance_negative FROM user_balance WHERE balance < 0;
+SELECT COUNT(*) AS charge_count FROM charges WHERE status = 'COMPLETED';
+SELECT COUNT(*) AS payment_count FROM payments WHERE status = 'COMPLETED';
+SELECT
+  SUM(CASE WHEN side = 'DEBIT'  THEN amount ELSE 0 END) AS total_debit,
+  SUM(CASE WHEN side = 'CREDIT' THEN amount ELSE 0 END) AS total_credit,
+  SUM(CASE WHEN side = 'DEBIT'  THEN amount ELSE 0 END)
+  - SUM(CASE WHEN side = 'CREDIT' THEN amount ELSE 0 END) AS imbalance
+FROM ledger_entries;
+"
+```
+
+통과 조건: `balance_negative` = 0, `imbalance` = 0
+
+#### 7단계: EC2 중지
+
+```sh
+aws ec2 stop-instances --instance-ids i-0751634ea06f47983 i-0388d423a421fc16f i-008436887ef8e132b
+```
+
+---
+
+## Phase 2 — MSA 부하 테스트
+
+> 모놀리식 결과 기록 완료. payment-api 2대 수평 확장, 원장 비동기(Kafka) 처리.
+
+### 목표
+
+| 지표 | 목표 |
+|---|---|
+| TPS | 1000 이상 |
+| Error rate | < 1% |
+| 정합성 | imbalance = 0 |
+
+### 최종 결과 ✅ 완료
+
+
+| 지표 | 값 |
+|---|---|
+| TPS | **1,007.1** (Peak 1,327) |
+| Mean Test Time | 215ms |
+| Executed Tests | 884,505건 |
+| Error rate | **0%** |
+| 정합성 | imbalance = 0 |
+| App #1 CPU peak | 76% |
+| App #2 CPU peak | 63% |
+| Infra CPU | 25% |
+
+**테스트 시나리오**: 충전 30% / 결제 60% / 이체 10%, 랜덤 userId (5M 풀), VUser 228 (6 process × 38 threads)
+
+**정합성 검증 결과** (Kafka lag 소진 후):
+
+| Check | payment_db | ledger_db | 결과 |
+|---|---|---|---|
+| balance_negative | 0 | — | ✅ |
+| payment 건수 | 634,365 | 634,365 | ✅ |
+| charge 건수 | 120,722 | 120,722 | ✅ |
+| 복식부기 위반 | — | 0 | ✅ |
+| outbox_unpublished | 0 | — | ✅ |
+| payment 금액 | 63,436,500 | 63,436,500 | ✅ |
+| charge 금액 | 120,722,000 | 120,722,000 | ✅ |
+
+> Kafka lag 소진까지 약 35분 소요 (payment.completed 단일 파티션 + 단일 컨슈머 스레드 제약)
+
+### EC2 구성
+
+| 인스턴스 ID | 타입 | 역할 |
+|---|---|---|
+| i-0751634ea06f47983 | c5.2xlarge | Infra (MySQL:3306, Redis:6379, Kafka:9092) |
+| i-0d61d140e3a4199b7 | c5.xlarge | App #1 (payment-api:8080, node-id=1) |
+| i-0388d423a421fc16f | c5.xlarge | App #2 (payment-api:8080, node-id=2) |
+| (ledger EC2) | c5.xlarge | Ledger (ledger-service:8081, node-id=3) |
+| i-008436887ef8e132b | c5.large | NGrinder (Controller:8300 + Agent) |
+
+ALB: `jpay-payment-alb-1923595921.ap-northeast-2.elb.amazonaws.com` → App #1, #2 라운드로빈
+
+> NGrinder EC2 /etc/hosts 및 agent `extra_hosts`에 ALB private IP(172.31.15.40) 매핑 필요 (VPC internal)
+
+### 스크립트 변경 사항 (모놀리식 대비)
+
+| 항목 | 모놀리식 | MSA |
+|---|---|---|
+| TARGET | 172.31.10.127:8080 | ALB private IP (172.31.24.126) |
+| Vuser | 198 | 228 (6×38, 1000 TPS 목표) |
+| THREADS_PER_PROCESS | 33 | 38 |
+| USER_COUNT | 5,000,000 | 5,000,000 |
+| 시나리오 | 충전 30% / 결제 60% / 이체 10% | 동일 |
+
+### 재시작 절차
+
+#### 1단계: EC2 기동
+
+```sh
+aws ec2 start-instances --instance-ids i-0751634ea06f47983 i-0d61d140e3a4199b7 i-0388d423a421fc16f i-008436887ef8e132b
+aws ec2 wait instance-running --instance-ids i-0751634ea06f47983 i-0d61d140e3a4199b7 i-0388d423a421fc16f i-008436887ef8e132b
+```
+
+> Private IP 고정: Infra=172.31.1.32
+
+#### 2단계: Infra EC2 — 컨테이너 기동
+
+```sh
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<INFRA_IP>
+docker compose ps   # 내려가 있으면:
 docker compose up -d
 ```
 
-컨테이너 상태 확인:
+MySQL, Redis, Kafka 모두 healthy 확인.
+
+#### 3단계: App EC2 — payment-api 기동
 
 ```sh
-docker compose ps
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<APP1_IP>
+bash ~/start-payment-1.sh
+
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<APP2_IP>
+bash ~/start-payment-2.sh
+
+# Ledger EC2
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<LEDGER_IP>
+bash ~/start-ledger.sh
 ```
 
-4개 MySQL 컨테이너(`mysql-payment`, `mysql-ledger`, `mysql-transfer`, `mysql-batch`) 모두 `healthy` 상태일 때까지 대기 (보통 20~40초).
+#### 4단계: 데이터 시딩
 
-| 서비스 | 컨테이너 | 호스트 포트 |
-|---|---|---|
-| payment-api | jpay-mysql-payment | 3307 |
-| ledger-service | jpay-mysql-ledger | 3308 |
-| transfer-service | jpay-mysql-transfer | 3309 |
-| batch-app | jpay-mysql-batch | 3310 |
+```sh
+# Infra EC2에서 실행 (이미 완료된 경우 생략)
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<INFRA_IP>
+docker exec jpay-mysql mysql -ujpay -pjpay payment_db -e "SELECT COUNT(*) FROM user_balance;"  # 5000000 확인
+docker exec jpay-mysql mysql -ujpay -pjpay ledger_db -e "SELECT COUNT(*) FROM accounts;"       # 5000002 확인
+
+# 미시딩 시 로컬에서 실행
+bash load-tests/verify/seed-user-balance.sh <INFRA_IP> 3306
+```
+
+#### 5단계: NGrinder Validate
+
+NGrinder UI: `http://<NGRINDER_IP>:8300` (admin / admin)
+
+- Script → ChargeTest → Validate 실행
+- 통과 기준: /charges 201, /payments/pessimistic 201, Errors 0
+
+#### 6단계: 부하 테스트 실행
+
+NGrinder UI → Performance Test → Create Test
+
+| 항목 | 값 |
+|---|---|
+| Script | ChargeTest |
+| Vuser per Agent | 198 |
+| Duration | 15분 |
+| Ramp-Up | Enable / Initial 10 / Interval 30s / Step 10 |
+
+#### 7단계: 정합성 검증
+
+```sh
+ssh -i ~/.ssh/jpay-load-test.pem ec2-user@<INFRA_IP>
+
+# payment_db
+docker exec jpay-mysql mysql -ujpay -pjpay payment_db -e "
+SELECT COUNT(*) AS balance_negative FROM user_balance WHERE balance < 0;
+SELECT COUNT(*) AS charge_completed  FROM charges  WHERE status = 'COMPLETED';
+SELECT COUNT(*) AS payment_completed FROM payments WHERE status = 'COMPLETED';
+SELECT COUNT(*) AS outbox_unpublished FROM outbox_events WHERE published = 0;
+"
+
+# ledger_db
+docker exec jpay-mysql mysql -ujpay -pjpay ledger_db -e "
+SELECT
+  SUM(CASE WHEN side = 'DEBIT'  THEN amount ELSE 0 END) AS total_debit,
+  SUM(CASE WHEN side = 'CREDIT' THEN amount ELSE 0 END) AS total_credit,
+  SUM(CASE WHEN side = 'DEBIT'  THEN amount ELSE 0 END)
+  - SUM(CASE WHEN side = 'CREDIT' THEN amount ELSE 0 END) AS imbalance
+FROM ledger_entries;
+"
+```
+
+통과 조건: `balance_negative` = 0, `outbox_unpublished` = 0, `imbalance` = 0
+
+#### 8단계: EC2 중지
+
+```sh
+aws ec2 stop-instances --instance-ids i-0751634ea06f47983 i-0d61d140e3a4199b7 i-0388d423a421fc16f i-008436887ef8e132b
+```
 
 ---
 
-## 2단계: 초기 데이터 세팅
+## 재시작 시 체크리스트
 
-### 잔액 데이터 (payment-api DB, 3307)
-
-userId 1~500, 잔액 1,000,000원으로 초기화한다.
-
-```sh
-mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
-```
-
-재실행 시 `ON DUPLICATE KEY UPDATE`로 잔액이 1,000,000원으로 리셋된다.
-
-### 원장 계정 데이터 (ledger-service DB, 3308)
-
-ledger-service가 이벤트를 처리하려면 accounts 레코드가 사전에 존재해야 한다.
-
-```sh
-mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
-```
-
-- `OPERATING_CASH` (owner_id=0): 충전 시 운영 자금 계정
-- `MERCHANT_RECEIVABLE` (owner_id=1): 결제 수취 가맹점 계정 (k6 merchantId=1)
-- `USER_MONEY` (owner_id=1~500): 사용자 500명 계정
-
-재실행해도 `INSERT IGNORE`로 안전하다.
-
----
-
-## 3단계: 애플리케이션 기동
-
-터미널 3개를 열어 각각 실행한다.
-
-```sh
-# 터미널 1
-./gradlew :apps:payment-api:bootRun
-
-# 터미널 2
-./gradlew :apps:ledger-service:bootRun
-
-# 터미널 3
-./gradlew :apps:transfer-service:bootRun
-
-# 터미널 4
-./gradlew :apps:batch-app:bootRun
-```
-
-| 서비스 | 포트 | 헬스체크 |
-|---|---|---|
-| payment-api | 8080 | `curl localhost:8080/actuator/health` |
-| ledger-service | 8081 | `curl localhost:8081/actuator/health` |
-| transfer-service | 8082 | `curl localhost:8082/actuator/health` |
-| batch-app | 8083 | `curl localhost:8083/actuator/health` |
-
-3개 모두 `"status":"UP"` 확인 후 다음 단계로 넘어간다.
-
----
-
-## 4단계: Grafana 대시보드 확인
-
-브라우저에서 `http://localhost:3000` 접속 (admin / admin).
-
-좌측 메뉴 → Dashboards → **j-pay 부하 테스트** 대시보드 열기.
-
-> 서비스가 떠 있으면 JVM Heap, HikariCP, MySQL 패널에 바로 데이터가 표시된다.
-> k6 관련 패널(TPS, 지연, 에러율)은 k6 실행 후 채워진다.
-
----
-
-## 5단계: 부하 테스트 실행
-
-모든 k6 명령은 **프로젝트 루트**에서 실행한다.
-`--out` 플래그로 k6 메트릭을 Prometheus로 전송해 Grafana에 표시한다.
-
-### 스모크 테스트 — E2E 플로우 사전 검증 (50 VU × 2분)
-
-본격적인 시나리오 실행 전 DB 시딩과 서비스 연동이 정상인지 확인한다.
-
-```sh
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  load-tests/scenario1-smoke.js
-```
-
-ledger-service 로그에 `Record in retry and not yet recovered`가 없고, Grafana consumer lag가 0에 수렴하면 정상. 이후 정합성 검증(6단계)으로 4개 항목 모두 `0` 확인 후 시나리오 1로 진행한다.
-
----
-
-### 시나리오 1 — E2E 결제 플로우 (500 VU × 30분)
-
-```sh
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  load-tests/scenario1-e2e-flow.js
-```
-
-- 충전 → 결제 흐름, 멱등성 1% 중복 포함
-- 완료 후 바로 정합성 검증(6단계) 실행
-
-### 시나리오 2 — Circuit Breaker 장애 주입 (200 VU × 20분)
-
-```sh
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  load-tests/scenario3-circuit-breaker.js
-```
-
-- 0~5분 (NORMAL): 정상 운영 → CB CLOSED
-- 5~10분 (FAULT): `amount=99997`로 은행 mock 500 응답 → CB 누적 실패 → OPEN
-- 10~15분 (RECOVERY): 정상 amount 복귀 → 30초 후 HALF_OPEN → 10건 성공 → CLOSED
-- 15~20분 (STABLE): CB CLOSED 안정 확인
-- Grafana **Circuit Breaker 상태** 패널에서 전이 확인
-
-### 락 전략 TPS 비교 (500 VU × 10분 × 4회)
-
-4회 연속 실행. DB 초기화 없이 `RUN_ID`로 키가 분리되므로 바로 이어서 실행해도 된다.
-
-```sh
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  --env STRATEGY=optimistic \
-  load-tests/lock-comparison.js
-
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  --env STRATEGY=pessimistic \
-  load-tests/lock-comparison.js
-
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  --env STRATEGY=redis-lock \
-  load-tests/lock-comparison.js
-
-k6 run \
-  --out experimental-prometheus-rw=http://localhost:9090/api/v1/write \
-  --env STRATEGY=atomic \
-  load-tests/lock-comparison.js
-```
-
-각 실행이 끝나면 k6 summary에서 `http_req_duration{p(95)}` 수치를 기록해 비교한다.
-
----
-
-## 6단계: 정합성 검증
-
-시나리오 1 종료 후 **30초 이상 대기** (Outbox 폴러 처리 시간 확보) 후 실행.
-
-DB per service 분리로 검증 스크립트를 두 DB에 나눠 실행한다.
-
-```sh
-# payment-api DB (3307) — 잔액 음수, Outbox 미발행, 결제/충전 건수 및 금액
-mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/consistency-check-payment.sql
-
-# ledger-service DB (3308) — 복식부기, 원장 건수 및 금액
-mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/consistency-check-ledger.sql
-```
-
-**통과 조건:**
-
-| 검증 항목 | DB | 의미 |
-|---|---|---|
-| CHECK_1: balance_negative | payment | 잔액 음수 → 동시성 제어 실패 |
-| CHECK_2a/2b: count | payment ↔ ledger | 결제/충전 건수 cross-check (두 결과 값 일치해야 함) |
-| CHECK_3: double_entry_imbalance | ledger | 차변 합 ≠ 대변 합 → 복식부기 위반 |
-| CHECK_4: outbox_unpublished | payment | 미발행 Outbox 잔존 → 이벤트 유실 |
-| CHECK_5a/5b: amount | payment ↔ ledger | 결제/충전 금액 cross-check (두 결과 값 일치해야 함) |
-
----
-
-## 재실행 시 초기화 절차
-
-시나리오를 처음부터 다시 실행하려면:
-
-```sh
-# 1. DB 볼륨 포함 전체 초기화
-docker compose down -v
-docker compose up -d
-
-# 2. 데이터 재세팅 (MySQL healthy 확인 후)
-mysql -h 127.0.0.1 -P 3307 -u jpay -pjpay < load-tests/verify/seed-user-balance.sql
-mysql -h 127.0.0.1 -P 3308 -u jpay -pjpay < load-tests/verify/seed-ledger-accounts.sql
-```
-
-> 시나리오 1은 동일 키(`charge-${uid}-${__ITER}`)로 재실행하면 모든 요청이 idempotency replay로 처리된다. 반드시 DB를 초기화해야 한다.
-> 락 비교 스크립트는 `RUN_ID = Date.now()`로 키가 분리되므로 DB 초기화 없이 재실행 가능.
+- [ ] EC2 5대 start + IP 확인
+- [ ] Infra EC2: `docker compose ps` — MySQL, Redis, Kafka healthy
+- [ ] App #1, #2: payment-api 기동 + `/actuator/health` UP
+- [ ] Ledger EC2: ledger-service 기동 + `/actuator/health` UP
+- [ ] NGrinder UI: agent Approved 확인
+- [ ] user_balance 500만 건 확인 (`SELECT COUNT(*) FROM user_balance`)
+- [ ] ledger accounts 500만 건 확인 (`SELECT COUNT(*) FROM accounts`)
+- [ ] NGrinder Validate 통과 (충전 201, 결제 201)
