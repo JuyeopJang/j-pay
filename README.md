@@ -18,77 +18,70 @@ Java 21 / Spring Boot 3.5 / Spring Data JPA / Apache Kafka 3.9 / Redis 7 / MySQL
 
 ### Before — 모놀리식
 
-<table>
-<tr>
-<td>
+```mermaid
+flowchart TD
+    NGrinder["NGrinder EC2\n198 VUser"]
 
-![모놀리식 아키텍처](docs/images/architecture-monolith.png)
+    NGrinder -->|HTTP 요청| App
 
-</td>
-<td>
+    subgraph App["App EC2 — c5.xlarge · Spring Boot 단일 앱"]
+        direction TB
+        Charge["충전 API + Bank Mock\nThread.sleep 200~500ms ← 병목"]
+        Pay[결제 API]
+        Transfer[이체 API]
+        Ledger["원장 기록 (동기, 트랜잭션 내)"]
+    end
 
-```
-[NGrinder EC2]
-      │ HTTP 요청 (198 VUser)
-      ▼
-[App EC2 - c5.xlarge]
-  Spring Boot 단일 앱
-  ├── 충전 API → Bank Mock (Thread.sleep 200~500ms)  ← 병목
-  ├── 결제 API
-  ├── 이체 API
-  └── 원장 기록 (모든 API 트랜잭션 안에서 동기 처리)
-      │
-      ▼
-[Infra EC2 - c5.xlarge]
-  ├── MySQL (결제 DB + 원장 DB 통합)
-  └── Redis
+    App --> Infra
+
+    subgraph Infra["Infra EC2 — c5.xlarge"]
+        MySQL["MySQL (결제 DB + 원장 DB 통합)"]
+        Redis[Redis]
+    end
 ```
 
 결제 처리량이 병목에 도달했을 때 payment-api만 독립적으로 확장할 수 없었습니다. MSA로 전환하면서 트래픽이 집중되는 payment-api만 독립적으로 수평 확장 가능하도록 구조를 개선했습니다. 단일 인스턴스 TPS 상한 ~760 실측.
 
-</td>
-</tr>
-</table>
-
 ### After — MSA
 
-<table>
-<tr>
-<td>
+```mermaid
+flowchart TD
+    NGrinder["NGrinder EC2\n228 VUser"] -->|HTTP 요청| ALB["ALB · Round Robin"]
 
-![MSA 아키텍처](docs/images/architecture-msa.png)
+    ALB --> App1 & App2
 
-</td>
-<td>
+    subgraph App1["App EC2 #1 — c5.xlarge · payment-api (node-id=1)"]
+        direction TB
+        C1["충전 API + Bank Mock"]
+        C2[결제 API]
+        C3[이체 API]
+        C4[Outbox 메시지 저장]
+    end
 
-```
-                        [NGrinder EC2]
-                              │ HTTP 요청 (228 VUser)
-                              ▼
-                        [ALB - Round Robin]
-                  ┌───────────┴───────────┐
-                  ▼                       ▼
-    [App EC2 #1 - c5.xlarge]   [App EC2 #2 - c5.xlarge]   ──(Kafka)──▶   [Ledger EC2 - c5.xlarge]
-     payment-api (node-id=1)    payment-api (node-id=2)   Outbox 이벤트 발행   ledger-service
-     ├── 충전 API → Bank Mock   (동일 구성)                                  └── 원장 기록 (복식부기, 비동기)
-     ├── 결제 API
-     ├── 이체 API
-     └── Outbox 메시지 저장
-                  │                       │                                          │
-                  └───────────────────────┴──────────────────────────────────────────┘
-                                          │
-                                          ▼
-                                [Infra EC2 - c5.2xlarge]
-                                  ├── MySQL (결제 DB + 원장 DB 논리적 분리)
-                                  ├── Kafka
-                                  └── Redis
+    subgraph App2["App EC2 #2 — c5.xlarge · payment-api (node-id=2)"]
+        direction TB
+        D1["충전 API + Bank Mock"]
+        D2[결제 API]
+        D3[이체 API]
+        D4[Outbox 메시지 저장]
+    end
+
+    App1 & App2 -->|"Kafka · Outbox 이벤트"| LedgerEC2
+
+    subgraph LedgerEC2["Ledger EC2 — c5.xlarge"]
+        LedgerSvc["ledger-service\n원장 기록 (복식부기, 비동기)"]
+    end
+
+    App1 & App2 & LedgerEC2 --> Infra
+
+    subgraph Infra["Infra EC2 — c5.2xlarge"]
+        MySQL["MySQL (결제 DB + 원장 DB 논리적 분리)"]
+        Kafka[Kafka]
+        Redis[Redis]
+    end
 ```
 
 트래픽이 집중되는 payment-api를 2대로 독립적으로 수평 확장하고, 원장 기록을 Kafka 비동기로 분리해 결제 응답 경로에서 제거했습니다. TPS 1,007 달성.
-
-</td>
-</tr>
-</table>
 
 ---
 
